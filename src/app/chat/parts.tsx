@@ -4,6 +4,25 @@ import Image from "next/image";
 import { useState } from "react";
 import type { ProductCard, Routine } from "@/lib/engine";
 
+/* ---------- Where customers actually buy ---------- */
+
+// Every product card links to its own page on bebodywise.com (the URL comes from the catalogue).
+// For a whole routine there is no ready-made cart link, so we also link to the main shop.
+const SHOP_URL = "https://bebodywise.com/";
+
+function BuyLink({ c, className = "" }: { c: ProductCard; className?: string }) {
+  return (
+    <a
+      href={c.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`inline-flex items-center gap-1 rounded-full bg-blue px-4 py-2 text-sm font-medium text-white transition hover:bg-navy ${className}`}
+    >
+      Buy on Bodywise ↗
+    </a>
+  );
+}
+
 /* ---------- Small helpers ---------- */
 
 function Price({ c }: { c: ProductCard }) {
@@ -93,10 +112,8 @@ export function ProductCardView({
         <Expand title="Precautions">
           <ul className="list-disc space-y-1 pl-4">{precautions.map((s) => <li key={s}>{s}</li>)}</ul>
         </Expand>
-        <div className="flex items-center justify-between border-t border-sky-2/70 pt-2">
-          <a href={c.url} target="_blank" rel="noreferrer" className="text-sm font-medium text-blue hover:underline">
-            View on Bodywise ↗
-          </a>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sky-2/70 pt-3 pb-1">
+          <BuyLink c={c} />
           {actions}
         </div>
       </div>
@@ -162,11 +179,11 @@ export function routineText(r: Routine) {
     lines.push(`${label.toUpperCase()}`);
     for (const id of ids) {
       const it = r.items.find((x) => x.id === id)!;
-      lines.push(`- ${it.name}${it.size ? ` (${it.size})` : ""}: ₹${it.price}`);
+      lines.push(`- ${it.name}${it.size ? ` (${it.size})` : ""}: ₹${it.price}`, `  Buy: ${it.url}`);
     }
     lines.push("");
   }
-  lines.push(`Total (one of each): ₹${r.total}`, `Prices as of ${r.pricesAsOf}.`, "");
+  lines.push(`Total (one of each): ₹${r.total}`, `Prices as of ${r.pricesAsOf}.`, `Shop: ${SHOP_URL}`, "");
   for (const w of r.warnings) lines.push(`* ${w}`);
   return lines.join("\n");
 }
@@ -229,6 +246,15 @@ export function RoutineView({ r, onAsk }: { r: Routine; onAsk: (text: string) =>
         <span className="font-serif text-3xl">₹{r.total}</span>
       </div>
 
+      <a
+        href={SHOP_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded-full bg-blue py-3.5 text-center text-sm font-medium text-white transition hover:bg-navy"
+      >
+        Shop your routine on bebodywise.com ↗
+      </a>
+
       <ul className="list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-slate">
         {otherWarnings.map((w) => <li key={w}>{w}</li>)}
         <li>Prices as of {r.pricesAsOf}.</li>
@@ -263,6 +289,9 @@ export function RoutineChatCard({ r, onOpen }: { r: Routine; onOpen: () => void 
         </button>
         <span className="hidden text-xs text-slate lg:inline">Full routine is in the side panel →</span>
       </div>
+      <a href={SHOP_URL} target="_blank" rel="noopener noreferrer" className="mt-3 block rounded-full border border-blue/40 py-2.5 text-center text-sm font-medium text-blue transition hover:bg-sky">
+        Shop on bebodywise.com ↗
+      </a>
     </div>
   );
 }
