@@ -10,9 +10,9 @@ import {
 } from "ai";
 import { z } from "zod";
 import { getModel } from "@/lib/model";
-import { concernLabels } from "@/lib/catalogue";
+import { concernLabels, getProduct, roleOf } from "@/lib/catalogue";
 import { systemPrompt, type Profile } from "@/lib/prompt";
-import { flowHint, questionState, applyAnswers, needsQuestionDue, needsOptions, requiredGroups, MAX_QUESTIONS } from "@/lib/flow";
+import { flowHint, questionState, applyAnswers, needsQuestionDue, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
 import {
   searchProducts,
   productDetails,
@@ -59,11 +59,26 @@ export async function POST(req: Request) {
     messages.findLastIndex((m) => m.parts.some((p) => p.type === `tool-${name}`));
   if (lastUpdate && order("update_routine") > order("build_routine")) routine = lastUpdate;
 
+  const shown = new Set<string>(); // products already shown in this reply: never show one twice
+  // When the customer asks for alternatives, never offer what they have already seen or got in their routine.
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const lastUserText = (lastUser?.parts as { type: string; text?: string }[] | undefined)?.map((p) => p.text ?? "").join(" ") ?? "";
+  const before = new Set<string>();
+  if (/alternativ|something else|other option|instead|different one|swap/i.test(lastUserText)) {
+    const ids: string[] = [];
+    for (const m of messages)
+      for (const part of m.parts as { type: string; output?: { cards?: { id: string }[]; items?: { id: string }[] } }[]) {
+        part.output?.cards?.forEach((c) => ids.push(c.id));
+        part.output?.items?.forEach((c) => ids.push(c.id));
+      }
+    ids.forEach((id) => { const p = getProduct(id); if (p) before.add(p.family); });
+  }
+
   const result = streamText({
     model: getModel(),
     instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked)),
     messages: await convertToModelMessages(messages),
-    stopWhen: [isStepCount(8), hasToolCall("ask_question"), hasToolCall("ask_needs")], // a question always ends the turn so the customer can answer
+    stopWhen: [isStepCount(14), hasToolCall("ask_question"), hasToolCall("ask_needs")], // a question always ends the turn so the customer can answer
     // The small free model sometimes searches and then just chats instead of showing products.
     // Once it has searched, it must finish with a real answer tool (ask / recommend / routine / compare).
     prepareStep: ({ steps, stepNumber }) => {
@@ -125,6 +140,7 @@ export async function POST(req: Request) {
           concernKeys: z.array(concernKey).optional(),
           category: z.enum(["body", "hair", "face", "sun-protection", "wellness"]).optional(),
           type: z.string().optional().describe("e.g. body wash, face wash, lotion, serum, sunscreen, shampoo, scrub"),
+          role: z.enum(["cleanser", "treatment", "moisturiser", "sunscreen", "deodorant", "exfoliator", "conditioner", "supplement"]).optional().describe("what job the product does"),
           bodyArea: z.string().optional(),
           maxPrice: z.number().optional().describe("rupees, for a single product"),
           text: z.string().optional().describe("a product name or ingredient to look for"),
@@ -150,9 +166,12 @@ export async function POST(req: Request) {
 
       recommend_products: tool({
         description:
-          "Show 2 to 3 real options for ONE kind of product (e.g. body wash) and mark your best pick. Call once per kind of product. The app draws the cards from the catalogue; you only give IDs and short reasons.",
+          "Show 2 to 3 real options for ONE kind of product and mark your best pick. Call once per kind (and per area). The app checks that every product really is that kind (a deodorant can never be shown as a cleanser), never repeats a product, and draws the cards from the catalogue.",
         inputSchema: z.object({
-          need: z.string().describe('the kind of product, e.g. "Body wash", "Moisturiser", "Sunscreen"'),
+          kind: z
+            .enum(["cleanser", "treatment", "moisturiser", "sunscreen", "deodorant", "exfoliator", "conditioner", "supplement"])
+            .describe("what job these products do. Underarm roll-ons are 'deodorant', body/face wash and shampoo are 'cleanser'"),
+          area: z.enum(["face", "body", "scalp"]).optional().describe("where it is used, when it matters"),
           picks: z
             .array(
               z.object({
@@ -166,17 +185,47 @@ export async function POST(req: Request) {
           bestPickId: z.string().describe("the productId of your best pick among the picks"),
           bestReason: z.string().describe("one or two sentences on why it is the best pick for this customer"),
         }),
-        execute: async ({ need, picks, bestPickId, bestReason }) => {
-          const { valid, invalid } = validate(picks.map((p) => p.productId));
+        execute: async ({ kind, area, picks, bestPickId, bestReason }) => {
+          const need = groupLabel(kind, area, /hair|scalp/.test((profile.concerns ?? []).join(" ").toLowerCase()));
+          const { valid: found, invalid } = validate(picks.map((p) => p.productId));
+          // The app, not the AI, decides what kind each product is. Wrong kind or already shown = rejected.
+          // Treatments must also match what the customer actually asked about (no brow serum for acne).
+          const concernKeys = (profile.concerns ?? []).filter((k) => k in concernLabels);
+          const needsMatch = ["treatment", "deodorant", "exfoliator"].includes(kind) && concernKeys.length > 0;
+          const wrong = found.filter(
+            (p) => roleOf(p) !== kind || shown.has(p.id) || before.has(p.family) || (needsMatch && !p.concerns.some((c) => concernKeys.includes(c.key)))
+          );
+          const valid = found.filter((p) => !wrong.includes(p));
+          valid.forEach((p) => shown.add(p.id));
+          invalid.push(...wrong.map((p) => p.id));
+          // If nothing usable was given, the app finds the right products itself.
+          let reason = bestReason;
+          let auto = false;
+          if (!valid.length) {
+            const category = area === "face" ? "face" : area === "scalp" ? "hair" : kind === "sunscreen" ? undefined : area === "body" || kind === "deodorant" ? "body" : undefined;
+            const keys = (profile.concerns ?? []).filter((k) => k in concernLabels);
+            let found2 = searchProducts({ role: kind, category, concernKeys: keys.length ? keys : undefined, excludeIds: [...shown], limit: 6 }).results;
+            // Basics like moisturiser and sunscreen do not have to match the concern: fall back to the best-reviewed ones.
+            if (!found2.length && !needsMatch) found2 = searchProducts({ role: kind, category, excludeIds: [...shown], limit: 6 }).results;
+            for (const s of found2) {
+              const prod = getProduct(s.id);
+              if (prod && valid.length < 2 && !before.has(prod.family) && !valid.some((v) => v.family === prod.family)) {
+                valid.push(prod);
+                shown.add(prod.id);
+              }
+            }
+            auto = valid.length > 0;
+            reason = "A well-reviewed Bodywise option for this step.";
+          }
           const best = valid.some((p) => p.id === bestPickId) ? bestPickId : valid[0]?.id;
           const cards = valid
             .map((p) => {
               const pick = picks.find((x) => x.productId === p.id);
-              return { ...cardFull(p), why: pick?.why ?? "", chooseIf: p.id === best || /sever|persist|stubborn|serious|worse|worsen|chronic/i.test(pick?.chooseIf ?? "") ? undefined : pick?.chooseIf, // never judge severity: that is a doctor's call
-                 isBest: p.id === best };
+              const chooseIf = p.id === best || /sever|persist|stubborn|serious|worse|worsen|chronic/i.test(pick?.chooseIf ?? "") ? undefined : pick?.chooseIf; // never judge severity: that is a doctor's call
+              return { ...cardFull(p), why: auto ? "" : (pick?.why ?? ""), chooseIf, isBest: p.id === best };
             })
             .sort((a, b) => Number(b.isBest) - Number(a.isBest));
-          return { need, cards, bestPickId: best, bestReason, rejected: invalid.map((id) => `${id}: not in catalogue`) };
+          return { need, kind, cards, bestPickId: best, bestReason: reason, rejected: invalid };
         },
       }),
 

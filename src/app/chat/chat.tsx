@@ -3,8 +3,9 @@
 import { useChat } from "@ai-sdk/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { ProductCard, Routine } from "@/lib/engine";
-import { CompareTable, ProductCardView, RoutineChatCard, RoutineView } from "./parts";
+import type { ProductCard, Routine, Variant } from "@/lib/engine";
+import { CONCERN_LABELS } from "@/lib/concerns";
+import { CardContext, CompareTable, ProductCardView, RoutineChatCard, RoutineView } from "./parts";
 
 const STORAGE_KEY = "bodywise-guide-chat-v1";
 
@@ -50,6 +51,41 @@ function currentRoutine(messages: Msg[]): Routine | null {
   return found;
 }
 
+/** Facts the customer has told us (saved by the AI each time they share something). */
+function currentProfile(messages: Msg[]): { concerns?: string[]; pregnantOrNursing?: boolean; sensitivities?: string } {
+  let found = {};
+  for (const m of messages)
+    for (const p of m.parts as Part[])
+      if (p.type === "tool-update_profile" && p.state === "output-available" && p.output) found = p.output as object;
+  return found;
+}
+
+const sumPrice = (items: { price: number }[]) => items.reduce((s, i) => s + i.price, 0);
+const sumSavings = (items: { price: number; mrp: number | null }[]) => items.reduce((s, i) => s + (i.mrp ? i.mrp - i.price : 0), 0);
+
+/** The customer picked another size or scent: update every card/routine that shows this product. */
+function withVariant(messages: Msg[], oldId: string, v: Variant): Msg[] {
+  const swap = <T extends { id: string }>(x: T): T =>
+    x.id === oldId ? { ...x, id: v.id, size: v.size, price: v.price, mrp: v.mrp, url: v.url, image: v.image, chosen: true } : x;
+  return messages.map((m) => ({
+    ...m,
+    parts: (m.parts as Part[]).map((p) => {
+      const out = p.output as (Record<string, unknown> & { cards?: { id: string }[]; items?: (ProductCard & { slots: string[] })[] }) | undefined;
+      if (!out) return p;
+      if (out.cards?.some((x) => x.id === oldId)) return { ...p, output: { ...out, cards: out.cards.map(swap) } };
+      if (out.items?.some((x) => x.id === oldId)) {
+        const items = out.items.map(swap);
+        const rename = (ids: unknown) => (ids as string[]).map((id) => (id === oldId ? v.id : id));
+        return {
+          ...p,
+          output: { ...out, items, am: rename(out.am), pm: rename(out.pm), weekly: rename(out.weekly), supplement: rename(out.supplement), total: sumPrice(items), savings: sumSavings(items) },
+        };
+      }
+      return p;
+    }),
+  }));
+}
+
 export default function Chat() {
   const { messages, sendMessage, status, error, setMessages, regenerate } = useChat();
   const [input, setInput] = useState("");
@@ -68,8 +104,11 @@ export default function Chat() {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
       } else {
-        const cat = new URLSearchParams(window.location.search).get("category");
-        if (cat && CATEGORY_OPENERS[cat]) sendMessage({ text: CATEGORY_OPENERS[cat] });
+        const params = new URLSearchParams(window.location.search);
+        const cat = params.get("category");
+        const concern = params.get("concern");
+        if (concern && CONCERN_LABELS[concern]) sendMessage({ text: `I need help with: ${CONCERN_LABELS[concern]}` });
+        else if (cat && CATEGORY_OPENERS[cat]) sendMessage({ text: CATEGORY_OPENERS[cat] });
       }
     } catch {}
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -113,6 +152,36 @@ export default function Chat() {
     setSheetOpen(false);
   };
 
+  const profile = useMemo(() => currentProfile(messages as Msg[]), [messages]);
+  const routineIds = useMemo(() => new Set((routine?.items ?? []).map((i) => i.id)), [routine]);
+
+  const onVariant = (oldId: string, v: Variant) => setMessages((prev) => withVariant(prev as Msg[], oldId, v) as typeof prev);
+
+  // Add or remove a routine step without the AI: the server just rebuilds the routine from the product list.
+  const changeRoutine = async (entries: { id: string; slots?: string[] }[], note: string, input: object) => {
+    const before = routine?.items ?? [];
+    try {
+      const res = await fetch("/api/routine", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entries }) });
+      if (!res.ok) throw new Error();
+      const r = (await res.json()) as Routine;
+      // keep the size/scent choices the customer already made
+      r.items = r.items.map((i) => ({ ...i, chosen: before.find((b) => b.id === i.id)?.chosen || (input as { chosen?: boolean }).chosen === true && entries[entries.length - 1]?.id === i.id }));
+      setMessages((prev) => [
+        ...prev,
+        { id: `local-${Date.now()}`, role: "assistant", parts: [{ type: "text", text: note }, { type: "tool-update_routine", toolCallId: `local-${Date.now()}`, state: "output-available", input, output: r }] } as (typeof prev)[number],
+      ]);
+      setSheetOpen(false);
+    } catch {
+      setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: "assistant", parts: [{ type: "text", text: "Sorry, I couldn't update your routine just now. Please try again." }] } as (typeof prev)[number]]);
+    }
+  };
+  const onAdd = (card: ProductCard) =>
+    changeRoutine([...(routine?.items ?? []).map((i) => ({ id: i.id, slots: i.slots })), { id: card.id }], `Added ${card.name} to your routine.`, { action: "add", productId: card.id, chosen: card.chosen });
+  const onRemove = (id: string) => {
+    const it = routine?.items.find((i) => i.id === id);
+    changeRoutine((routine?.items ?? []).filter((i) => i.id !== id).map((i) => ({ id: i.id, slots: i.slots })), `Removed ${it?.name ?? "the product"} from your routine.`, { action: "remove", productId: id });
+  };
+
   const last = messages[messages.length - 1];
   const lastParts = (last?.parts ?? []) as Part[];
   // Show "Thinking…" whenever the AI is working but nothing visible has appeared yet
@@ -142,22 +211,32 @@ export default function Chat() {
           ? ["Show me alternatives", "Compare the products", "Remove a step"]
           : []
       : [];
+  const healthChips =
+    status === "ready" && !ask && profile.pregnantOrNursing === undefined && !profile.sensitivities && lastParts.some((p) => p.state === "output-available" && (p.type === "tool-recommend_products" || p.type === "tool-build_routine"))
+      ? ["No allergies, not pregnant", "I'm pregnant or nursing", "I have an allergy"]
+      : [];
   const followUpText: Record<string, string> = {
     "Remove a step": "I'd like to remove a step from my routine. Which steps could I do without?",
   };
 
   return (
+    <CardContext.Provider value={{ onVariant, onAdd, routineIds, profileConcerns: profile.concerns ?? [] }}>
     <div className="flex h-dvh bg-mist">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-sky-2/60 bg-white/80 px-4 py-3 backdrop-blur sm:px-6">
           <Link href="/" className="font-serif text-lg text-navy">
             Bodywise <span className="text-blue">Guide</span>
           </Link>
-          {messages.length > 0 && (
-            <button onClick={newChat} className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">
-              New chat
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <Link href="/" className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">
+              Home
+            </Link>
+            {messages.length > 0 && (
+              <button onClick={newChat} className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">
+                New chat
+              </button>
+            )}
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto">
@@ -182,6 +261,7 @@ export default function Chat() {
                 role={m.role}
                 parts={m.parts as Part[]}
                 streaming={busy && m.id === last?.id}
+                askHealth={m.id === last?.id && !busy && profile.pregnantOrNursing === undefined && !profile.sensitivities}
                 onOpenRoutine={() => setSheetOpen(true)}
               />
             ))}
@@ -198,6 +278,13 @@ export default function Chat() {
             )}
 
             {ask && !busy && <QuickReplies key={last.id} options={ask.options} multi={!!ask.multiSelect} onSend={send} />}
+            {healthChips.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {healthChips.map((h) => (
+                  <Chip key={h} onClick={() => send(h === "I have an allergy" ? "I have an allergy to a product or ingredient" : h)}>{h}</Chip>
+                ))}
+              </div>
+            )}
             {followUps.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {followUps.map((f) => (
@@ -256,7 +343,7 @@ export default function Chat() {
       {routine && (
         <aside className="hidden w-[400px] shrink-0 overflow-y-auto border-l border-sky-2/60 bg-white/60 p-5 lg:block">
           <h2 className="mb-4 font-serif text-2xl text-navy">Your routine</h2>
-          <RoutineView r={routine} onAsk={send} />
+          <RoutineView r={routine} onAsk={send} onRemove={onRemove} />
         </aside>
       )}
 
@@ -272,12 +359,13 @@ export default function Chat() {
               </button>
             </div>
             <div className="overflow-y-auto px-5 pb-8 pt-2">
-              <RoutineView r={routine} onAsk={send} />
+              <RoutineView r={routine} onAsk={send} onRemove={onRemove} />
             </div>
           </div>
         </div>
       )}
     </div>
+    </CardContext.Provider>
   );
 }
 
@@ -375,11 +463,13 @@ function Message({
   role,
   parts,
   streaming,
+  askHealth,
   onOpenRoutine,
 }: {
   role: string;
   parts: Part[];
   streaming: boolean;
+  askHealth: boolean;
   onOpenRoutine: () => void;
 }) {
   if (role === "user") {
@@ -395,6 +485,7 @@ function Message({
   // tool call, so we reorder here.) Cards wait for the text while it is still streaming.
   const isText = (p: Part) => p.type === "text" && !!p.text?.trim();
   const hasText = parts.some(isText);
+  const hasResults = parts.some((p) => p.state === "output-available" && /^tool-(recommend_products|build_routine)$/.test(p.type));
   const ordered = [...parts.filter(isText), ...parts.filter((p) => !isText(p))].filter(
     (p) => !(streaming && !hasText && p.state === "output-available" && /^tool-(recommend_products|build_routine|update_routine|compare_products)$/.test(p.type))
   );
@@ -411,6 +502,7 @@ function Message({
         if (name === "ask_question" || name === "ask_needs") return <Bubble key={i}>{String(out.question)}</Bubble>;
         if (name === "recommend_products") {
           const g = out as unknown as { need: string; cards: (ProductCard & { why: string; chooseIf?: string; isBest: boolean })[]; bestReason: string };
+          if (!g.cards?.length) return null;
           return (
             <section key={i} className="grid gap-3">
               {g.need && <h3 className="text-xs font-medium uppercase tracking-widest text-slate">{g.need}</h3>}
@@ -425,6 +517,9 @@ function Message({
           return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} />;
         return null;
       })}
+      {askHealth && hasResults && !streaming && (
+        <Bubble>Do you have any allergies, or are you pregnant or nursing? Tell me if you&apos;d like me to account for that in these picks.</Bubble>
+      )}
     </div>
   );
 }

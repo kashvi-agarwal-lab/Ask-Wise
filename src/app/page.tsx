@@ -1,6 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
-import { categoryStats } from "@/lib/catalogue";
+import { categoryStats, topRated, topKits, reviewStats, type Product } from "@/lib/catalogue";
+import { CONCERN_LABELS } from "@/lib/concerns";
+import ResumeChat from "@/components/resume-chat";
+import Star from "@/components/star";
 
 const CTA = "/chat"; // The chat page is built in Part 3
 
@@ -42,7 +45,51 @@ function Photo({ id, className = "", priority = false }: { id: string; className
   );
 }
 
+const POPULAR_CONCERNS = [
+  "body-acne", "face-acne", "hair-fall", "dandruff", "dry-skin", "tan",
+  "pigmentation", "underarm-darkness", "strawberry-skin", "stretch-marks", "cracked-heels", "sun-protection",
+];
+
+const FAQ = [
+  ["Is this medical advice?", "No. Bodywise Guide suggests Be Bodywise products and explains how to use them. It can't diagnose anything. For bleeding, a spreading rash, signs of infection or anything severe or persistent, please see a dermatologist or doctor."],
+  ["How does it choose products?", "Only from the real Be Bodywise range. Every product, price and photo comes from the catalogue, and the app checks each suggestion before showing it. The AI explains the choices but never makes up products."],
+  ["Can I choose a size or scent?", "Yes. When a product comes in different sizes or scents, you pick yours on the card and the routine total updates."],
+  ["Where do I buy?", "Each product has a Buy on Bodywise button that opens its page on bebodywise.com. Prices shown are as of the date on the page and can change on the site."],
+  ["Do I need an account?", "No. There is nothing to sign up for, and your chat stays in your own browser."],
+];
+
+function ProductTile({ p }: { p: Product }) {
+  return (
+    <a
+      href={p.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="reveal group flex flex-col overflow-hidden rounded-3xl bg-white ring-1 ring-sky-2/70 transition hover:-translate-y-1 hover:shadow-xl hover:shadow-navy/10"
+    >
+      <div className="relative aspect-[4/3] bg-sky">
+        <Image src={p.image} alt={p.displayName} fill sizes="(min-width: 1024px) 30vw, 50vw" className="object-cover" />
+      </div>
+      <div className="flex flex-1 flex-col p-3 sm:p-4">
+        <h3 className="font-medium leading-snug text-navy">{p.displayName}</h3>
+        <p className="mt-1 flex items-center gap-1 text-xs text-slate">
+          <Star className="h-3.5 w-3.5 text-blue" /> {p.rating} · {p.reviewCount} reviews
+        </p>
+        <div className="mt-auto flex items-center justify-between pt-3">
+          <span>
+            <span className="font-semibold text-navy">₹{p.price}</span>
+            {p.mrp && p.mrp > p.price && <span className="ml-1.5 text-xs text-slate line-through">₹{p.mrp}</span>}
+          </span>
+          <span className="rounded-full bg-blue px-3.5 py-1.5 text-xs font-medium text-white transition group-hover:bg-navy">Buy ↗</span>
+        </div>
+      </div>
+    </a>
+  );
+}
+
 export default function Home() {
+  const stats = reviewStats();
+  const tops = topRated(6);
+  const kits = topKits(4);
   return (
     <main className="flex-1">
       {/* Top bar */}
@@ -90,9 +137,28 @@ export default function Home() {
           <Photo id="sun" className="rounded-3xl animate-fade-up [animation-delay:0.3s]" />
           </div>
           <div className="mx-auto mt-6 w-fit animate-float rounded-full bg-white px-6 py-3 text-center text-navy shadow-xl shadow-navy/10 ring-1 ring-sky-2">
-            <span className="font-serif text-2xl text-blue">4.8★</span>
-            <span className="ml-2 text-sm">loved by thousands</span>
+            <span className="inline-flex items-center gap-1 font-serif text-2xl text-blue">{stats.avg}<Star className="h-5 w-5" /></span>
+            <span className="ml-2 text-sm">average from {stats.reviews.toLocaleString("en-IN")} reviews</span>
           </div>
+        </div>
+      </section>
+
+      <ResumeChat />
+
+      {/* Shop by concern */}
+      <section className="mx-auto max-w-6xl px-5 pb-16 pt-4 sm:px-8">
+        <h2 className="reveal font-serif text-3xl text-navy sm:text-4xl">What&apos;s on your mind?</h2>
+        <p className="reveal mt-3 max-w-lg text-navy/70">Tap a concern and we&apos;ll start from there.</p>
+        <div className="mt-6 flex flex-wrap gap-2.5">
+          {POPULAR_CONCERNS.map((k) => (
+            <Link
+              key={k}
+              href={`${CTA}?concern=${k}`}
+              className="rounded-full border border-blue/30 bg-white px-4 py-2.5 text-sm text-navy transition hover:-translate-y-0.5 hover:border-blue hover:bg-sky"
+            >
+              {CONCERN_LABELS[k]}
+            </Link>
+          ))}
         </div>
       </section>
 
@@ -132,6 +198,88 @@ export default function Home() {
               </Link>
             );
           })}
+        </div>
+      </section>
+
+      {/* Top rated */}
+      <section className="mx-auto max-w-6xl px-5 pb-20 sm:px-8">
+        <h2 className="reveal font-serif text-3xl text-navy sm:text-4xl">Customer favourites</h2>
+        <p className="reveal mt-3 max-w-lg text-navy/70">The best-reviewed everyday products, rated by real customers on bebodywise.com.</p>
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+          {tops.map((p) => (
+            <ProductTile key={p.id} p={p} />
+          ))}
+        </div>
+      </section>
+
+      {/* Kits */}
+      <section className="bg-sky/60 py-20">
+        <div className="mx-auto max-w-6xl px-5 sm:px-8">
+          <h2 className="reveal font-serif text-3xl text-navy sm:text-4xl">Kits &amp; bundles</h2>
+          <p className="reveal mt-3 max-w-lg text-navy/70">Several products in one pack, with the saving shown against the listed price.</p>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            {kits.map((k) => {
+              const inside = (k.contains ?? []).map((c) => c.name).filter(Boolean);
+              return (
+                <a
+                  key={k.id}
+                  href={k.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="reveal group flex flex-col rounded-3xl bg-white p-5 ring-1 ring-sky-2/70 transition hover:-translate-y-1 hover:shadow-xl hover:shadow-navy/10"
+                >
+                  <h3 className="font-serif text-xl text-navy">{k.displayName}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-ink/75">
+                    {inside.length >= 2 ? `Includes: ${inside.join(", ")}.` : "See the product page for what's inside."}
+                  </p>
+                  <div className="mt-auto flex items-center justify-between pt-4">
+                    <span>
+                      <span className="font-semibold text-navy">₹{k.price}</span>
+                      {k.mrp && k.mrp > k.price && (
+                        <>
+                          <span className="ml-1.5 text-xs text-slate line-through">₹{k.mrp}</span>
+                          <span className="ml-2 rounded-full bg-aqua px-2 py-0.5 text-xs font-medium text-navy">Save ₹{k.mrp - k.price}</span>
+                        </>
+                      )}
+                    </span>
+                    <span className="rounded-full bg-blue px-3.5 py-1.5 text-xs font-medium text-white transition group-hover:bg-navy">Buy ↗</span>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Social proof: real numbers from the catalogue */}
+      <section className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
+        <div className="reveal grid gap-6 text-center sm:grid-cols-3">
+          {[
+            [`${stats.avg} / 5`, "average rating across the range"],
+            [stats.reviews.toLocaleString("en-IN") + "+", "customer reviews on bebodywise.com"],
+            [String(stats.products), "different products to choose from"],
+          ].map(([big, small]) => (
+            <div key={small} className="rounded-3xl bg-white p-6 ring-1 ring-sky-2/70">
+              <p className="font-serif text-4xl text-blue">{big}</p>
+              <p className="mt-2 text-sm text-navy/70">{small}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="mx-auto max-w-3xl px-5 pb-20 sm:px-8">
+        <h2 className="reveal font-serif text-3xl text-navy sm:text-4xl">Good to know</h2>
+        <div className="mt-8 divide-y divide-sky-2 rounded-3xl bg-white px-6 ring-1 ring-sky-2/70">
+          {FAQ.map(([q, a]) => (
+            <details key={q} className="group py-4">
+              <summary className="flex cursor-pointer list-none items-center justify-between font-medium text-navy marker:hidden">
+                {q}
+                <span className="text-blue transition group-open:rotate-45">+</span>
+              </summary>
+              <p className="mt-2 leading-relaxed text-ink/75">{a}</p>
+            </details>
+          ))}
         </div>
       </section>
 
