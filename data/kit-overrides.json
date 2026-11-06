@@ -1,0 +1,59 @@
+{
+  "_note": "Hand-checked kit contents the automatic matcher missed. Every entry quotes the kit's own product page. Use 'family' to link to a product in the catalogue, or only 'name' when the item is not sold separately in this catalogue.",
+  "hair-pro-growth-pack": {
+    "contains": [
+      { "name": "Hair Gummies (Biotin, Zinc, Multivitamins), 30 gummies", "quote": "Hair Gummies packed with Biotin, Zinc, Multivitamins ... Contains 30 gummies & 50ml hair serum" }
+    ]
+  },
+  "advanced-hair-growth-pack": {
+    "contains": [
+      { "name": "Hair Gummies (Biotin, Zinc, Multivitamins)", "quote": "Hair Gummies : Packed with Biotin, Zinc, Multivitamins" }
+    ]
+  },
+  "advanced-hair-growth-pack-xp": {
+    "contains": [
+      { "name": "Hair Gummies (Biotin, Zinc, Multivitamins)", "quote": "Hair Gummies : Packed with Biotin, Zinc, Multivitamins" }
+    ]
+  },
+  "hair-growth-pack-30ml-xp": {
+    "contains": [
+      { "name": "Hair Gummies (Biotin, Zinc, Multivitamins)", "quote": "Hair Gummies : Packed with Biotin, Zinc, Multivitamins" }
+    ]
+  },
+  "hair-growth-pack-rosemary-roll-on-xp-2": {
+    "contains": [
+      { "name": "Hair Health Gummies (Biotin, Zinc, Multivitamins)", "quote": "Hair Health Gummies : Enriched with Biotin, Zinc, Multivitamins" }
+    ]
+  },
+  "hair-growth-pack-rosemary-roll-on-90n": {
+    "contains": [
+      { "name": "Hair Health Gummies (Biotin, Zinc, Multivitamins)", "quote": "Hair Health Gummies : Enriched with Biotin, Zinc, Multivitamins" }
+    ]
+  },
+  "magnesium-gummies-and-lotion-kit": {
+    "contains": [
+      { "family": "5 in 1 magnesium gummies with glycinate vitamin d3", "quote": "Magnesium Gummies 60N – Formulated with 5 forms of Magnesium" }
+    ]
+  },
+  "body-exfoliation-pigmentation-kit": {
+    "contains": [
+      { "family": "7% glycolic acid exfoliating body stick", "quote": "7% Glycolic Acid Stick - gently exfoliates, unclogs pores, and smoothens rough, bumpy skin" }
+    ]
+  },
+  "face-and-body-acne-kit": {
+    "contains": [
+      { "family": "2.5% benzoyl peroxide facewash", "quote": "Powered by 2.5% Benzoyl Peroxide, this facewash + bodywash duo" }
+    ]
+  },
+  "sun-care-duo-head-to-toe": {
+    "contains": [
+      { "family": "ultra light sunscreen spf50", "quote": "apply a coin-sized amount of Ultra Light Sunscreen to your face, neck, and ears" },
+      { "family": "de tan spf 50 body sunscreen lotion", "quote": "Squeeze a generous amount of De-Tan SPF Body Lo[tion]" }
+    ]
+  },
+  "6-aha-bha-underarm-roll-on-twin-pack-75ml": {
+    "contains": [
+      { "family": "6% aha bha underarm roll on", "quote": "How to Use 6% AHA BHA Underarm Roll On?" }
+    ]
+  }
+}
