@@ -3,6 +3,7 @@ import Link from "next/link";
 import { categoryStats, topRated, topKits, reviewStats, type Product } from "@/lib/catalogue";
 import { CONCERN_LABELS } from "@/lib/concerns";
 import ResumeChat from "@/components/resume-chat";
+import CartLink from "@/components/cart-link";
 import Star from "@/components/star";
 
 const CTA = "/chat"; // The chat page is built in Part 3
@@ -97,12 +98,15 @@ export default function Home() {
         <span className="font-serif text-xl tracking-tight text-navy">
           Bodywise <span className="text-blue">Guide</span>
         </span>
-        <Link
-          href={CTA}
-          className="rounded-full border border-navy/20 px-4 py-2 text-sm text-navy transition hover:bg-sky-2"
-        >
-          Find my routine
-        </Link>
+        <div className="flex items-center gap-2">
+          <CartLink className="px-4 py-2" />
+          <Link
+            href={CTA}
+            className="rounded-full border border-navy/20 px-4 py-2 text-sm text-navy transition hover:bg-sky-2"
+          >
+            Find my routine
+          </Link>
+        </div>
       </header>
 
       {/* Hero */}

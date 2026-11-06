@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ProductCard, Routine, Variant } from "@/lib/engine";
 import { CONCERN_LABELS } from "@/lib/concerns";
+import CartLink from "@/components/cart-link";
+import { addToCart, useCart } from "@/lib/cart";
 import { CardContext, CompareTable, ProductCardView, RoutineChatCard, RoutineView } from "./parts";
 
 const STORAGE_KEY = "bodywise-guide-chat-v1";
@@ -155,6 +157,28 @@ export default function Chat() {
   const profile = useMemo(() => currentProfile(messages as Msg[]), [messages]);
   const routineIds = useMemo(() => new Set((routine?.items ?? []).map((i) => i.id)), [routine]);
 
+  // Cart (shared across chats, saved in this browser)
+  const cartLines = useCart();
+  const cartIds = useMemo(() => new Set(cartLines.map((l) => l.id)), [cartLines]);
+  const [toast, setToast] = useState("");
+  const topic = useMemo(() => {
+    const first = (messages as Msg[]).find((m) => m.role === "user");
+    const text = ((first?.parts ?? []) as Part[]).find((p) => p.type === "text")?.text ?? "";
+    return text.length > 36 ? text.slice(0, 34) + "…" : text;
+  }, [messages]);
+  const showToast = (t: string) => {
+    setToast(t);
+    setTimeout(() => setToast(""), 3500);
+  };
+  const onCart = (card: ProductCard) => {
+    addToCart([{ id: card.id, from: topic ? `Chat: ${topic}` : "Chat", chosen: card.chosen }]);
+    showToast(`Added ${card.name} to your cart`);
+  };
+  const onCartAll = (r: Routine) => {
+    addToCart(r.items.map((i) => ({ id: i.id, from: topic ? `Routine: ${topic}` : "Routine", chosen: i.chosen })));
+    showToast(`Added your routine (${r.items.length} products) to your cart`);
+  };
+
   const onVariant = (oldId: string, v: Variant) => setMessages((prev) => withVariant(prev as Msg[], oldId, v) as typeof prev);
 
   // Add or remove a routine step without the AI: the server just rebuilds the routine from the product list.
@@ -220,7 +244,7 @@ export default function Chat() {
   };
 
   return (
-    <CardContext.Provider value={{ onVariant, onAdd, routineIds, profileConcerns: profile.concerns ?? [] }}>
+    <CardContext.Provider value={{ onVariant, onAdd, onCart, routineIds, cartIds, profileConcerns: profile.concerns ?? [] }}>
     <div className="flex h-dvh bg-mist">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-sky-2/60 bg-white/80 px-4 py-3 backdrop-blur sm:px-6">
@@ -231,6 +255,7 @@ export default function Chat() {
             <Link href="/" className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">
               Home
             </Link>
+            <CartLink />
             {messages.length > 0 && (
               <button onClick={newChat} className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">
                 New chat
@@ -263,6 +288,7 @@ export default function Chat() {
                 streaming={busy && m.id === last?.id}
                 askHealth={m.id === last?.id && !busy && profile.pregnantOrNursing === undefined && !profile.sensitivities}
                 onOpenRoutine={() => setSheetOpen(true)}
+                onCartAll={onCartAll}
               />
             ))}
 
@@ -343,7 +369,7 @@ export default function Chat() {
       {routine && (
         <aside className="hidden w-[400px] shrink-0 overflow-y-auto border-l border-sky-2/60 bg-white/60 p-5 lg:block">
           <h2 className="mb-4 font-serif text-2xl text-navy">Your routine</h2>
-          <RoutineView r={routine} onAsk={send} onRemove={onRemove} />
+          <RoutineView r={routine} onAsk={send} onRemove={onRemove} onCartAll={onCartAll} />
         </aside>
       )}
 
@@ -359,9 +385,15 @@ export default function Chat() {
               </button>
             </div>
             <div className="overflow-y-auto px-5 pb-8 pt-2">
-              <RoutineView r={routine} onAsk={send} onRemove={onRemove} />
+              <RoutineView r={routine} onAsk={send} onRemove={onRemove} onCartAll={onCartAll} />
             </div>
           </div>
+        </div>
+      )}
+      {toast && (
+        <div role="status" className="fixed inset-x-0 bottom-40 z-[60] mx-auto flex w-fit max-w-[90%] animate-fade-up items-center gap-3 rounded-full bg-navy px-5 py-3 text-sm text-mist shadow-xl">
+          {toast}
+          <Link href="/cart" className="font-medium text-aqua underline">View cart</Link>
         </div>
       )}
     </div>
@@ -465,12 +497,14 @@ function Message({
   streaming,
   askHealth,
   onOpenRoutine,
+  onCartAll,
 }: {
   role: string;
   parts: Part[];
   streaming: boolean;
   askHealth: boolean;
   onOpenRoutine: () => void;
+  onCartAll: (r: Routine) => void;
 }) {
   if (role === "user") {
     const text = parts.filter((p) => p.type === "text").map((p) => p.text).join("");
@@ -514,7 +548,7 @@ function Message({
         }
         if (name === "compare_products") return <CompareTable key={i} products={(out.products as never[]) ?? []} />;
         if (ROUTINE_TOOLS.includes(p.type) && out.items)
-          return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} />;
+          return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} onCartAll={onCartAll} />;
         return null;
       })}
       {askHealth && hasResults && !streaming && (

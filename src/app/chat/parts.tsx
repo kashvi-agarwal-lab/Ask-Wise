@@ -9,10 +9,12 @@ import { CONCERN_LABELS } from "@/lib/concerns";
 
 export const CardContext = createContext<{
   onVariant: (oldId: string, v: Variant) => void;
-  onAdd: (c: ProductCard) => void;
+  onAdd: (c: ProductCard) => void; // add to the routine being built in this chat
+  onCart: (c: ProductCard) => void; // add to the cart (shared across chats)
   routineIds: Set<string>;
+  cartIds: Set<string>;
   profileConcerns: string[];
-}>({ onVariant: () => {}, onAdd: () => {}, routineIds: new Set(), profileConcerns: [] });
+}>({ onVariant: () => {}, onAdd: () => {}, onCart: () => {}, routineIds: new Set(), cartIds: new Set(), profileConcerns: [] });
 
 /* ---------- Where customers actually buy ---------- */
 
@@ -82,7 +84,7 @@ const perUnit = (v: Variant) => {
   return m ? { value: v.price / parseFloat(m[1]), unit: m[2] } : null;
 };
 
-function VariantPicker({ c }: { c: ProductCard }) {
+export function VariantPicker({ c }: { c: ProductCard }) {
   const { onVariant } = useContext(CardContext);
   const vs = c.variants ?? [];
   const current = vs.find((v) => v.id === c.id) ?? vs[0];
@@ -170,7 +172,7 @@ export function ProductCardView({
   badge?: string;
   note?: string; // for the best pick: why it is best; for the others: when to choose them
 }) {
-  const { onAdd, routineIds, profileConcerns } = useContext(CardContext);
+  const { onAdd, onCart, routineIds, cartIds, profileConcerns } = useContext(CardContext);
   const precautions = [
     ...c.precautions,
     c.isSupplement ? "Check with a doctor before starting any supplement." : "Patch-test on a small area for 24 hours before regular use.",
@@ -228,13 +230,19 @@ export function ProductCardView({
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sky-2/70 pb-1 pt-3">
           <span className="flex flex-wrap items-center gap-2">
             <BuyLink c={c} />
+            <button
+              onClick={() => onCart(c)}
+              className="rounded-full border border-blue/40 px-4 py-2 text-sm font-medium text-blue transition hover:bg-sky"
+            >
+              {cartIds.has(c.id) ? "✓ In cart · add another" : "Add to cart"}
+            </button>
             {!actions && (
               <button
                 onClick={() => onAdd(c)}
                 disabled={inRoutine}
-                className="rounded-full border border-blue/40 px-4 py-2 text-sm font-medium text-blue transition hover:bg-sky disabled:border-sky-2 disabled:text-slate"
+                className="px-1 py-2 text-sm text-slate transition hover:text-blue disabled:text-slate/60"
               >
-                {inRoutine ? "✓ In your routine" : "+ Add to my routine"}
+                {inRoutine ? "✓ In routine" : "+ Routine"}
               </button>
             )}
           </span>
@@ -317,7 +325,7 @@ export function routineText(r: Routine) {
 }
 
 /** Full routine: used in the side panel (desktop) and the bottom sheet (mobile). */
-export function RoutineView({ r, onAsk, onRemove }: { r: Routine; onAsk: (text: string) => void; onRemove: (id: string) => void }) {
+export function RoutineView({ r, onAsk, onRemove, onCartAll }: { r: Routine; onAsk: (text: string) => void; onRemove: (id: string) => void; onCartAll: (r: Routine) => void }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -384,13 +392,16 @@ export function RoutineView({ r, onAsk, onRemove }: { r: Routine; onAsk: (text: 
         {r.savings > 0 && <p className="mt-1 text-sm text-aqua">You save ₹{r.savings} compared with MRP.</p>}
       </div>
 
+      <button onClick={() => onCartAll(r)} className="rounded-full bg-blue py-3.5 text-center text-sm font-medium text-white transition hover:bg-navy">
+        Add this whole routine to my cart
+      </button>
       <a
         href={SHOP_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="rounded-full bg-blue py-3.5 text-center text-sm font-medium text-white transition hover:bg-navy"
+        className="-mt-2 rounded-full border border-blue/40 py-3 text-center text-sm font-medium text-blue transition hover:bg-sky"
       >
-        Shop your routine on bebodywise.com ↗
+        Shop on bebodywise.com ↗
       </a>
 
       {r.startSlow?.length > 0 && (
@@ -425,7 +436,7 @@ export function RoutineView({ r, onAsk, onRemove }: { r: Routine; onAsk: (text: 
 }
 
 /** Compact version shown inside the chat message. */
-export function RoutineChatCard({ r, onOpen }: { r: Routine; onOpen: () => void }) {
+export function RoutineChatCard({ r, onOpen, onCartAll }: { r: Routine; onOpen: () => void; onCartAll: (r: Routine) => void }) {
   return (
     <div className="rounded-3xl bg-white p-4 ring-1 ring-sky-2/70">
       <p className="font-serif text-xl text-navy">Your routine</p>
@@ -449,9 +460,14 @@ export function RoutineChatCard({ r, onOpen }: { r: Routine; onOpen: () => void 
         </button>
         <span className="hidden text-xs text-slate lg:inline">Full routine is in the side panel →</span>
       </div>
-      <a href={SHOP_URL} target="_blank" rel="noopener noreferrer" className="mt-3 block rounded-full border border-blue/40 py-2.5 text-center text-sm font-medium text-blue transition hover:bg-sky">
-        Shop on bebodywise.com ↗
-      </a>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button onClick={() => onCartAll(r)} className="rounded-full bg-blue py-2.5 text-center text-sm font-medium text-white transition hover:bg-navy">
+          Add to cart
+        </button>
+        <a href={SHOP_URL} target="_blank" rel="noopener noreferrer" className="rounded-full border border-blue/40 py-2.5 text-center text-sm font-medium text-blue transition hover:bg-sky">
+          Shop on bebodywise.com ↗
+        </a>
+      </div>
     </div>
   );
 }
