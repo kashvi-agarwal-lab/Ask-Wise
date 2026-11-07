@@ -101,6 +101,8 @@ export default function Chat() {
 
   // Restore the saved chat (it only ever lives in this browser) or start from ?category=
   useEffect(() => {
+    // (run in a timer that is cancelled on cleanup, so development's double-run of effects only starts one chat)
+    const timer = setTimeout(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const cat = params.get("category");
@@ -109,7 +111,6 @@ export default function Chat() {
       if (opener) {
         // Tapping a concern or category tile always starts a fresh chat from that topic
         localStorage.removeItem(STORAGE_KEY);
-        window.history.replaceState(null, "", "/chat"); // so a refresh restores this chat instead of restarting it
         sendMessage({ text: opener });
       } else {
         const saved = localStorage.getItem(STORAGE_KEY);
@@ -125,10 +126,16 @@ export default function Chat() {
         }
       }
     } catch {}
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRestored(true);
+    }, 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Once a chat has started from a tile, drop ?concern= from the address so a refresh restores it instead of restarting
+  useEffect(() => {
+    if (messages.length > 0 && window.location.search) window.history.replaceState(null, "", "/chat");
+  }, [messages.length]);
 
   useEffect(() => {
     // Save the conversation after every change (not while a reply is half-written)

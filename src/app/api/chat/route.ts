@@ -266,7 +266,11 @@ export async function POST(req: Request) {
             const lowest = Math.min(...valid.map((p) => strengthOf(p)));
             const pool = valid.filter((p) => strengthOf(p) === lowest);
             best = pool.some((p) => p.id === best) ? best : pool[0].id;
-            reason = `The mildest matching option for your ${/sensitive/i.test(profile.skinType ?? "") ? "sensitive" : "dry"} skin. Start slowly and patch-test, since any active can still irritate.`;
+            const skinKnown = dryOrSensitive(allUserText(messages), profile.skinType);
+            const skinWord = /sensitive/i.test(`${profile.skinType ?? ""} ${allUserText(messages)}`) ? "sensitive" : "dry";
+            reason = skinKnown
+              ? `The mildest matching option for your ${skinWord} skin. Start slowly and patch-test, since any active can still irritate.`
+              : "A mild, low-risk place to start. Patch-test first and introduce it slowly.";
           }
           // Purpose-built products lead: the pick that matches the customer's concern best is the headline.
           if (!mild && concernKeys.length && valid.length > 1) {
