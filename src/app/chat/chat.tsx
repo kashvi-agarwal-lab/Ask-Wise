@@ -458,7 +458,7 @@ function QuickReplies({ options, multi, onSend }: { options: string[]; multi: bo
               key={o}
               onClick={() => toggle(o)}
               aria-pressed={picked.includes(o)}
-              className={`rounded-full border px-4 py-2 text-sm transition ${picked.includes(o) ? "border-navy bg-navy text-mist" : "border-blue/30 bg-white text-navy hover:bg-sky"}`}
+              className={`rounded-full border px-4 py-2.5 text-sm shadow-sm shadow-navy/5 transition active:scale-95 ${picked.includes(o) ? "border-blue bg-blue text-white" : "border-blue/30 bg-white text-navy hover:border-blue hover:bg-sky"}`}
             >
               {picked.includes(o) ? "✓ " : ""}{o}
             </button>
@@ -478,7 +478,7 @@ function Chip({ children, onClick }: { children: React.ReactNode; onClick: () =>
   return (
     <button
       onClick={onClick}
-      className="animate-fade-up rounded-full border border-blue/30 bg-white px-4 py-2 text-sm text-navy transition hover:-translate-y-0.5 hover:border-blue hover:bg-sky"
+      className="animate-fade-up rounded-full border border-blue/30 bg-white px-4 py-2.5 text-sm text-navy shadow-sm shadow-navy/5 transition hover:-translate-y-0.5 hover:border-blue hover:bg-sky active:scale-95"
     >
       {children}
     </button>
@@ -515,7 +515,7 @@ function CardSkeleton({ label }: { label: string }) {
 }
 
 const Bubble = ({ children }: { children: React.ReactNode }) => (
-  <div className="max-w-[92%] whitespace-pre-wrap rounded-3xl rounded-bl-md bg-white px-5 py-3 leading-relaxed text-ink ring-1 ring-sky-2/70">
+  <div className="max-w-[92%] whitespace-pre-wrap rounded-3xl rounded-bl-md bg-white px-5 py-3.5 leading-relaxed text-ink shadow-sm shadow-navy/5 ring-1 ring-sky-2/70">
     {children}
   </div>
 );
@@ -545,7 +545,7 @@ function Message({
     const text = parts.filter((p) => p.type === "text").map((p) => p.text).join("");
     return (
       <div className="flex animate-fade-up justify-end">
-        <div className="max-w-[85%] rounded-3xl rounded-br-md bg-navy px-5 py-3 text-mist">{text}</div>
+        <div className="max-w-[85%] rounded-3xl rounded-br-md bg-navy px-5 py-3.5 leading-relaxed text-mist shadow-sm shadow-navy/10">{text}</div>
       </div>
     );
   }
