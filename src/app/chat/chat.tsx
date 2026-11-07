@@ -102,16 +102,27 @@ export default function Chat() {
   // Restore the saved chat (it only ever lives in this browser) or start from ?category=
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
+      const params = new URLSearchParams(window.location.search);
+      const cat = params.get("category");
+      const concern = params.get("concern");
+      const opener = concern && CONCERN_LABELS[concern] ? `I need help with: ${CONCERN_LABELS[concern]}` : cat && CATEGORY_OPENERS[cat] ? CATEGORY_OPENERS[cat] : null;
+      if (opener) {
+        // Tapping a concern or category tile always starts a fresh chat from that topic
+        localStorage.removeItem(STORAGE_KEY);
+        window.history.replaceState(null, "", "/chat"); // so a refresh restores this chat instead of restarting it
+        sendMessage({ text: opener });
       } else {
-        const params = new URLSearchParams(window.location.search);
-        const cat = params.get("category");
-        const concern = params.get("concern");
-        if (concern && CONCERN_LABELS[concern]) sendMessage({ text: `I need help with: ${CONCERN_LABELS[concern]}` });
-        else if (cat && CATEGORY_OPENERS[cat]) sendMessage({ text: CATEGORY_OPENERS[cat] });
+        const saved = localStorage.getItem(STORAGE_KEY);
+        const parsed = saved ? JSON.parse(saved) : null;
+        if (Array.isArray(parsed) && parsed.length) {
+          const lastMsg = parsed[parsed.length - 1];
+          if (lastMsg?.role === "user") {
+            // refreshed while the guide was still answering: put the question back and ask again
+            const text = (lastMsg.parts as { type: string; text?: string }[]).find((p) => p.type === "text")?.text ?? "";
+            setMessages(parsed.slice(0, -1));
+            if (text) sendMessage({ text });
+          } else setMessages(parsed);
+        }
       }
     } catch {}
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -120,8 +131,8 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
-    if (restored && status === "ready" && messages.length)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    // Save the conversation after every change (not while a reply is half-written)
+    if (restored && (status === "ready" || status === "submitted") && messages.length) localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
   }, [messages, status, restored]);
 
   // Escape closes the routine sheet

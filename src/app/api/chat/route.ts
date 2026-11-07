@@ -359,9 +359,7 @@ export async function POST(req: Request) {
         const text = String((error as { message?: string })?.message ?? error);
         console.error("[chat error]", text.slice(0, 300));
         if (/quota|rate|429|RESOURCE_EXHAUSTED/i.test(text))
-          return "The free AI is getting a lot of requests right now. Please wait about a minute and try again.";
-        if (/API key|permission|401|403|API_KEY/i.test(text))
-          return "The AI key isn't working. Please check GOOGLE_GENERATIVE_AI_API_KEY in .env.local.";
+          return "A lot of people are trying the guide right now - give me a minute and ask again.";
         return "Something went wrong on my side. Please try again.";
       },
     }),
