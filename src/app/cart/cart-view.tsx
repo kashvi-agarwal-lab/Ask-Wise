@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Price from "@/components/price";
 import { useEffect, useMemo, useState } from "react";
 import type { ProductCard, Variant } from "@/lib/engine";
 import { CardContext, VariantPicker } from "../chat/parts";
@@ -116,8 +117,7 @@ export default function CartView() {
                         {p.size && <span className="font-normal text-slate"> · {p.size}</span>}
                       </p>
                       <p className="mt-0.5 text-sm">
-                        <span className="font-semibold text-navy">₹{p.price}</span>
-                        {p.mrp && <span className="ml-1.5 text-xs text-slate line-through">₹{p.mrp}</span>}
+                        <Price price={p.price} mrp={p.mrp} />
                       </p>
                       <p className="mt-0.5 text-xs text-slate">{line.from}</p>
                     </div>

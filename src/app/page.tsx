@@ -5,6 +5,7 @@ import { CONCERN_LABELS } from "@/lib/concerns";
 import ResumeChat from "@/components/resume-chat";
 import CartLink from "@/components/cart-link";
 import Star from "@/components/star";
+import Price from "@/components/price";
 
 const CTA = "/chat"; // The chat page is built in Part 3
 
@@ -76,10 +77,7 @@ function ProductTile({ p }: { p: Product }) {
           <Star className="h-3.5 w-3.5 text-blue" /> {p.rating} · {p.reviewCount} reviews
         </p>
         <div className="mt-auto flex items-center justify-between pt-3">
-          <span>
-            <span className="font-semibold text-navy">₹{p.price}</span>
-            {p.mrp && p.mrp > p.price && <span className="ml-1.5 text-xs text-slate line-through">₹{p.mrp}</span>}
-          </span>
+          <Price price={p.price} mrp={p.mrp} />
           <span className="rounded-full bg-blue px-3.5 py-1.5 text-xs font-medium text-white transition group-hover:bg-navy">Buy ↗</span>
         </div>
       </div>
@@ -233,15 +231,7 @@ export default function Home() {
                     {inside.length >= 2 ? `Includes: ${inside.join(", ")}.` : "See the product page for what's inside."}
                   </p>
                   <div className="mt-auto flex items-center justify-between pt-4">
-                    <span>
-                      <span className="font-semibold text-navy">₹{k.price}</span>
-                      {k.mrp && k.mrp > k.price && (
-                        <>
-                          <span className="ml-1.5 text-xs text-slate line-through">₹{k.mrp}</span>
-                          <span className="ml-2 rounded-full bg-aqua px-2 py-0.5 text-xs font-medium text-navy">Save ₹{k.mrp - k.price}</span>
-                        </>
-                      )}
-                    </span>
+                    <Price price={k.price} mrp={k.mrp} />
                     <span className="rounded-full bg-blue px-3.5 py-1.5 text-xs font-medium text-white transition group-hover:bg-navy">Buy ↗</span>
                   </div>
                 </a>

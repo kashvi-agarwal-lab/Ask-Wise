@@ -12,7 +12,7 @@
   --color-ink: #2b3548; /* soft charcoal-navy for body text, never pure black */
 
   --font-serif: var(--font-fraunces), Georgia, serif;
-  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
 
   --animate-fade-up: fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-float: float 7s ease-in-out infinite;
@@ -44,6 +44,12 @@
     animation-timeline: view();
     animation-range: entry 0% entry 35%;
   }
+}
+
+/* Quieter, calmer headings */
+h1, h2, h3 {
+  font-weight: 400;
+  letter-spacing: -0.012em;
 }
 
 body {

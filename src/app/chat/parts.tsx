@@ -4,6 +4,7 @@ import Image from "next/image";
 import { createContext, useContext, useState } from "react";
 import type { ProductCard, Routine, Variant } from "@/lib/engine";
 import { CONCERN_LABELS } from "@/lib/concerns";
+import Price from "@/components/price";
 
 /* ---------- Shared actions (set by the chat page) ---------- */
 
@@ -37,19 +38,6 @@ function BuyLink({ c }: { c: ProductCard }) {
 
 /* ---------- Small helpers ---------- */
 
-function Price({ c }: { c: ProductCard }) {
-  return (
-    <span className="whitespace-nowrap">
-      <span className="font-semibold text-navy">₹{c.price}</span>
-      {c.mrp && <span className="ml-1.5 text-xs text-slate line-through">₹{c.mrp}</span>}
-      {c.mrp && c.mrp > c.price && (
-        <span className="ml-2 rounded-full bg-aqua px-2 py-0.5 text-xs font-medium text-navy">
-          Save ₹{c.mrp - c.price} ({Math.round(((c.mrp - c.price) / c.mrp) * 100)}%)
-        </span>
-      )}
-    </span>
-  );
-}
 
 function Expand({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -198,7 +186,7 @@ export function ProductCardView({
             {sizeText && <span className="font-normal text-slate">{sizeText}</span>}
           </p>
           <p className="mt-0.5 text-sm">
-            <Price c={c} />
+            <Price price={c.price} mrp={c.mrp} />
           </p>
           {c.rating ? <p className="mt-0.5 text-xs text-slate">★ {c.rating} ({c.reviewCount} reviews)</p> : null}
         </div>
