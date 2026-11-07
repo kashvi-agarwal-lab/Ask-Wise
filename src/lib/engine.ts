@@ -103,7 +103,7 @@ export type SearchInput = {
   concernKeys?: string[];
   category?: string;
   type?: string;
-  role?: Role;
+  role?: Role | Role[];
   bodyArea?: string;
   maxPrice?: number;
   text?: string;
@@ -120,7 +120,7 @@ export function searchProducts(q: SearchInput, ctx?: SafetyCtx) {
     .filter((p) => !(p.isSupplement && !q.includeSupplements && q.category !== "wellness"))
     .filter((p) => !q.category || p.category === q.category)
     .filter((p) => !q.type || p.type === q.type)
-    .filter((p) => !q.role || roleOf(p) === q.role)
+    .filter((p) => !q.role || [q.role].flat().includes(roleOf(p)))
     .filter((p) => !q.maxPrice || p.price <= q.maxPrice)
     .filter((p) => !q.excludeIds?.includes(p.id))
     .filter((p) => isAllowed(p, ctx))

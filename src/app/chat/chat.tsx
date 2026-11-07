@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ProductCard, Routine, Variant } from "@/lib/engine";
 import { CONCERN_LABELS } from "@/lib/concerns";
-import { PREGNANCY_LINE, mentionsPregnancy, allUserText, dryOrSensitive } from "@/lib/safety-text";
+import { PREGNANCY_LINE, mentionsPregnancy, allUserText, dryOrSensitive, wantsTan, facePigmentation } from "@/lib/safety-text";
 import CartLink from "@/components/cart-link";
 import { addToCart, useCart } from "@/lib/cart";
 import { CardContext, CompareTable, ProductCardView, RoutineChatCard, RoutineView } from "./parts";
@@ -168,6 +168,7 @@ export default function Chat() {
 
   const profile = useMemo(() => currentProfile(messages as Msg[]), [messages]);
   const pregnant = useMemo(() => mentionsPregnancy(allUserText(messages as Msg[])), [messages]);
+  const topicText = useMemo(() => allUserText(messages as Msg[]), [messages]);
   const mildOnly = useMemo(() => dryOrSensitive(allUserText(messages as Msg[]), (profile as { skinType?: string }).skinType), [messages, profile]);
   const routineIds = useMemo(() => new Set((routine?.items ?? []).map((i) => i.id)), [routine]);
 
@@ -313,6 +314,8 @@ export default function Chat() {
                 streaming={busy && m.id === last?.id}
                 askHealth={m.id === last?.id && !busy && !pregnant && profile.pregnantOrNursing === undefined && !profile.sensitivities}
                 pregnant={pregnant}
+                tan={wantsTan(topicText)}
+                limitedFacePigmentation={facePigmentation(topicText)}
                 onOpenRoutine={() => setSheetOpen(true)}
                 onCartAll={onCartAll}
               />
@@ -523,6 +526,8 @@ function Message({
   streaming,
   askHealth,
   pregnant,
+  tan,
+  limitedFacePigmentation,
   onOpenRoutine,
   onCartAll,
 }: {
@@ -531,6 +536,8 @@ function Message({
   streaming: boolean;
   askHealth: boolean;
   pregnant: boolean;
+  tan: boolean;
+  limitedFacePigmentation: boolean;
   onOpenRoutine: () => void;
   onCartAll: (r: Routine) => void;
 }) {
@@ -547,6 +554,7 @@ function Message({
   // tool call, so we reorder here.) Cards wait for the text while it is still streaming.
   const isText = (p: Part) => p.type === "text" && !!p.text?.trim();
   const hasText = parts.some(isText);
+  const hasNonSunscreen = parts.some((p) => p.type === "tool-recommend_products" && ((p.output as { cards?: { role: string }[] } | undefined)?.cards ?? []).some((x) => x.role !== "sunscreen"));
   const hasResults = parts.some((p) => p.state === "output-available" && /^tool-(recommend_products|build_routine)$/.test(p.type));
   // Treatments lead, supporting basics (cleansers, moisturisers, sunscreen) follow.
   const KIND_ORDER: Record<string, number> = { treatment: 0, deodorant: 1, exfoliator: 2, cleanser: 3, moisturiser: 4, conditioner: 5, sunscreen: 6, supplement: 7 };
@@ -583,6 +591,18 @@ function Message({
           return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} onCartAll={onCartAll} />;
         return null;
       })}
+      {tan && hasResults && !streaming && (
+        <Bubble>
+          {hasNonSunscreen
+            ? "Sunscreen helps prevent more tan, but it doesn't fade tan you already have. The exfoliating picks above are the ones in the range that help lighten it over time."
+            : "I couldn't find a Bodywise product that removes tan. Sunscreen only helps prevent more tan: it doesn't fade tan you already have."}
+        </Bubble>
+      )}
+      {limitedFacePigmentation && hasResults && !streaming && (
+        <Bubble>
+          The Bodywise range has limited options for dark patches on the face, so the picks above are what exists. For stubborn patches, a dermatologist can help.
+        </Bubble>
+      )}
       {hasResults && !streaming && (
         <p className="px-1 text-xs leading-relaxed text-slate">Topical products work best alongside a healthy diet and lifestyle.</p>
       )}

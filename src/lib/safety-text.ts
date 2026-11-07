@@ -49,3 +49,11 @@ export function dryOrSensitive(text: string, skinType?: string): boolean {
   if (skinType && /\b(dry|sensitive)\b/i.test(skinType)) return true;
   return /\b(dry|sensitive)\b[^.?!\n]{0,30}\bskin\b|\bskin\b[^.?!\n]{0,30}\b(dry|sensitive|flaky|tight)\b|\bsensitive\b/i.test(text);
 }
+
+/** Honest framing notes the customer should see next to results. */
+export function wantsTan(text: string): boolean {
+  return /\btan(ned|ning)?\b|suntan|de-tan/i.test(text);
+}
+export function facePigmentation(text: string): boolean {
+  return /(pigmentation|dark (spots|patches|marks))/i.test(text) && /\b(face|facial|cheeks?|forehead|chin)\b/i.test(text);
+}

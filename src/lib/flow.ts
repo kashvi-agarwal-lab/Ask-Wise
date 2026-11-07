@@ -176,6 +176,10 @@ export function flowHint(profile: Profile, asked: number, messages: UIMessage[] 
     notes.push("This has lasted more than 6 months: mention that a dermatologist or doctor can help with long-standing concerns.");
   if (/strong actives/i.test(profile.history ?? ""))
     notes.push("They have already used strong actives: do not stack more strong actives on top, and advise starting slowly.");
+  if ((profile.concerns ?? []).includes("tan"))
+    notes.push("The customer wants tan removed. Sunscreen only PREVENTS more tan, it does not fade tan they already have: say that honestly. Lead with the exfoliating products that list tan as a concern, and add sunscreen for prevention.");
+  if ((profile.concerns ?? []).includes("pigmentation") && (profile.bodyAreas ?? []).includes("face"))
+    notes.push("The customer wants help with dark patches or pigmentation on the FACE. The Bodywise range has limited options for face pigmentation: say that plainly, recommend only what the tools return, and suggest a dermatologist for stubborn patches.");
   if (starterMode(profile, messages))
     notes.push("The customer was unsure about most questions: give a gentle, low-risk STARTER set (mild cleanser, moisturiser, and sunscreen where relevant, nothing strong) and say honestly that this is 'a good place to start', not a full plan.");
   const extra = notes.length ? `\n${notes.join("\n")}` : "";

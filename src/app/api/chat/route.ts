@@ -31,6 +31,9 @@ import {
 
 export const maxDuration = 60;
 
+// A "treatment" group also accepts exfoliating scrubs (for example for tan), everything else must match exactly.
+const roleMatches = (kind: string, p: Parameters<typeof roleOf>[0]) => roleOf(p) === kind || (kind === "treatment" && roleOf(p) === "exfoliator");
+
 const concernKey = z.enum(Object.keys(concernLabels) as [string, ...string[]]);
 
 // Tool results are stored inside the chat messages, so the server needs no database:
@@ -230,7 +233,7 @@ export async function POST(req: Request) {
           const concernKeys = (profile.concerns ?? []).filter((k) => k in concernLabels);
           const needsMatch = ["treatment", "deodorant", "exfoliator"].includes(kind) && concernKeys.length > 0;
           const wrong = found.filter(
-            (p) => roleOf(p) !== kind || shown.has(p.id) || before.has(p.family) || (needsMatch && !p.concerns.some((c) => concernKeys.includes(c.key)))
+            (p) => !roleMatches(kind, p) || shown.has(p.id) || before.has(p.family) || (needsMatch && !p.concerns.some((c) => concernKeys.includes(c.key)))
           );
           const unsafe = found.filter((p) => !isAllowed(p, safety()));
           const valid = found.filter((p) => !wrong.includes(p) && !unsafe.includes(p));
@@ -243,9 +246,9 @@ export async function POST(req: Request) {
           if (!valid.length) {
             const category = area === "face" ? "face" : area === "scalp" ? "hair" : kind === "sunscreen" ? undefined : area === "body" || kind === "deodorant" ? "body" : undefined;
             const keys = (profile.concerns ?? []).filter((k) => k in concernLabels);
-            let found2 = searchProducts({ role: kind, category, concernKeys: keys.length ? keys : undefined, excludeIds: [...shown], limit: 6 }, safety()).results;
+            let found2 = searchProducts({ role: kind === "treatment" ? ["treatment", "exfoliator"] : kind, category, concernKeys: keys.length ? keys : undefined, excludeIds: [...shown], limit: 6 }, safety()).results;
             // Basics like moisturiser and sunscreen do not have to match the concern: fall back to the best-reviewed ones.
-            if (!found2.length && !needsMatch) found2 = searchProducts({ role: kind, category, excludeIds: [...shown], limit: 6 }, safety()).results;
+            if (!found2.length && !needsMatch) found2 = searchProducts({ role: kind === "treatment" ? ["treatment", "exfoliator"] : kind, category, excludeIds: [...shown], limit: 6 }, safety()).results;
             for (const s of found2) {
               const prod = getProduct(s.id);
               if (prod && valid.length < 2 && !before.has(prod.family) && !valid.some((v) => v.family === prod.family)) {
