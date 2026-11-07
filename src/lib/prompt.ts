@@ -14,7 +14,7 @@ export type Profile = {
   decideForMe?: boolean; // customer said "you decide"
 };
 
-export function systemPrompt(profile: Profile, hasRoutine: boolean, flow = "") {
+export function systemPrompt(profile: Profile, hasRoutine: boolean, flow = "", alerts = "") {
   const known = Object.keys(profile).length
     ? JSON.stringify(profile)
     : "nothing yet";
@@ -29,8 +29,7 @@ export function systemPrompt(profile: Profile, hasRoutine: boolean, flow = "") {
 ${known}
 NEVER ask again about anything listed above. Whenever the customer tells you something new about themselves (skin type, concerns, body area, sensitivity, pregnancy, budget, preferences), call update_profile right away with ONLY the new facts. Save only what they actually said: never guess a skin type from a symptom.
 
-## Where we are (decided by the app: follow it)
-${flow}
+${alerts ? `## SAFETY ALERTS FOR THIS CUSTOMER (decided by the app: follow exactly)\n${alerts}\n\n` : ""}## Where we are (decided by the app: follow it)\n${flow}
 
 ## Asking questions
 - FIRST, before anything else, call update_profile with everything the customer's latest message already tells you (concerns, bodyAreas such as face / body / scalp, skin type, and so on). Never ask about something they just said.

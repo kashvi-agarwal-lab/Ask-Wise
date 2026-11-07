@@ -27,6 +27,7 @@ export type Product = {
   tagline?: string | null;
   benefits?: string[];
   keyIngredients?: string[];
+  highlightIngredients?: string | null;
   fullIngredients?: string | null;
   formulatedWithout?: string | null;
   actives: { key: string; label: string; exfoliant: boolean }[];

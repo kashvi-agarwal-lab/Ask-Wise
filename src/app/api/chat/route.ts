@@ -12,6 +12,8 @@ import { z } from "zod";
 import { getModel } from "@/lib/model";
 import { concernLabels, getProduct, roleOf } from "@/lib/catalogue";
 import { systemPrompt, type Profile } from "@/lib/prompt";
+import { mentionsPregnancy, allUserText } from "@/lib/safety-text";
+import { isAllowed, type SafetyCtx } from "@/lib/safety";
 import { flowHint, questionState, applyAnswers, needsQuestionDue, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
 import {
   searchProducts,
@@ -52,6 +54,10 @@ export async function POST(req: Request) {
   }
 
   let profile: Profile = applyAnswers(lastToolOutput<Profile>(messages, "update_profile") ?? {}, messages);
+  // Pregnancy is read from what the customer typed, so the safety rule never depends on the AI remembering it.
+  const pregnantByText = mentionsPregnancy(allUserText(messages));
+  if (pregnantByText) profile = { ...profile, pregnantOrNursing: true };
+  const safety = (): SafetyCtx => ({ pregnant: pregnantByText || profile.pregnantOrNursing === true });
   let routine: Routine | null = lastToolOutput<Routine>(messages, "build_routine");
   const lastUpdate = lastToolOutput<Routine>(messages, "update_routine");
   // Whichever of build/update happened last is the current routine.
@@ -74,9 +80,16 @@ export async function POST(req: Request) {
     ids.forEach((id) => { const p = getProduct(id); if (p) before.add(p.family); });
   }
 
+  const alerts: string[] = [];
+  if (profile.pregnantOrNursing)
+    alerts.push(
+      `This customer is PREGNANT OR NURSING. The app already removes every product with retinol, salicylic acid, benzoyl peroxide, hydroquinone or chemical exfoliants (AHA, glycolic, lactic) from your tools, so only recommend what the tools return. If no safe product fits their concern (for example acne or pigmentation treatments need actives), say so plainly and do NOT show product cards for that concern. You may still offer pregnancy-friendly basics (mineral sunscreen, ceramide or peptide moisturiser, gentle non-active cleanser) when those are what they want. Never call any product "safe in pregnancy". The app adds the doctor line itself.`
+    );
+  const alertText = alerts.join("\n");
+
   const result = streamText({
     model: getModel(),
-    instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked)),
+    instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked), alertText),
     messages: await convertToModelMessages(messages),
     stopWhen: [isStepCount(14), hasToolCall("ask_question"), hasToolCall("ask_needs")], // a question always ends the turn so the customer can answer
     // The small free model sometimes searches and then just chats instead of showing products.
@@ -128,6 +141,7 @@ export async function POST(req: Request) {
               (merged as Record<string, unknown>)[k] = [...new Set([...prev, ...v])];
             } else (merged as Record<string, unknown>)[k] = v;
           }
+          if (pregnantByText) merged.pregnantOrNursing = true; // the AI cannot switch this off
           profile = merged;
           return merged;
         },
@@ -149,7 +163,7 @@ export async function POST(req: Request) {
           excludeIds: z.array(z.string()).optional(),
           limit: z.number().min(1).max(10).optional(),
         }),
-        execute: async (input) => searchProducts(input),
+        execute: async (input) => searchProducts(input, safety()),
       }),
 
       get_product_details: tool({
@@ -195,7 +209,9 @@ export async function POST(req: Request) {
           const wrong = found.filter(
             (p) => roleOf(p) !== kind || shown.has(p.id) || before.has(p.family) || (needsMatch && !p.concerns.some((c) => concernKeys.includes(c.key)))
           );
-          const valid = found.filter((p) => !wrong.includes(p));
+          const unsafe = found.filter((p) => !isAllowed(p, safety()));
+          const valid = found.filter((p) => !wrong.includes(p) && !unsafe.includes(p));
+          invalid.push(...unsafe.map((p) => p.id));
           valid.forEach((p) => shown.add(p.id));
           invalid.push(...wrong.map((p) => p.id));
           // If nothing usable was given, the app finds the right products itself.
@@ -204,9 +220,9 @@ export async function POST(req: Request) {
           if (!valid.length) {
             const category = area === "face" ? "face" : area === "scalp" ? "hair" : kind === "sunscreen" ? undefined : area === "body" || kind === "deodorant" ? "body" : undefined;
             const keys = (profile.concerns ?? []).filter((k) => k in concernLabels);
-            let found2 = searchProducts({ role: kind, category, concernKeys: keys.length ? keys : undefined, excludeIds: [...shown], limit: 6 }).results;
+            let found2 = searchProducts({ role: kind, category, concernKeys: keys.length ? keys : undefined, excludeIds: [...shown], limit: 6 }, safety()).results;
             // Basics like moisturiser and sunscreen do not have to match the concern: fall back to the best-reviewed ones.
-            if (!found2.length && !needsMatch) found2 = searchProducts({ role: kind, category, excludeIds: [...shown], limit: 6 }).results;
+            if (!found2.length && !needsMatch) found2 = searchProducts({ role: kind, category, excludeIds: [...shown], limit: 6 }, safety()).results;
             for (const s of found2) {
               const prod = getProduct(s.id);
               if (prod && valid.length < 2 && !before.has(prod.family) && !valid.some((v) => v.family === prod.family)) {
@@ -236,7 +252,7 @@ export async function POST(req: Request) {
           products: z.array(z.object({ productId: z.string(), slots: z.array(slot).optional() })).min(1).max(8),
         }),
         execute: async ({ products }) => {
-          const r = buildRoutine(products.map((p) => ({ id: p.productId, slots: p.slots as Slot[] | undefined })));
+          const r = buildRoutine(products.map((p) => ({ id: p.productId, slots: p.slots as Slot[] | undefined })), safety());
           routine = r;
           return r;
         },
@@ -253,7 +269,7 @@ export async function POST(req: Request) {
         }),
         execute: async ({ action, productId, replacementId, slots }) => {
           if (!routine) return { error: "There is no routine yet. Build one first with build_routine." };
-          const r = updateRoutine(routine, action, productId, replacementId, slots as Slot[] | undefined);
+          const r = updateRoutine(routine, action, productId, replacementId, slots as Slot[] | undefined, safety());
           if (!("error" in r)) routine = r;
           return r;
         },

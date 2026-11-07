@@ -1,5 +1,6 @@
 // The "app code" role: filters the catalogue, validates product IDs and does the maths.
 // The AI never invents products or prices; it can only use what these functions return.
+import { isAllowed, type SafetyCtx } from "./safety";
 import { visibleProducts, getProduct, concernLabels, pricesAsOf, roleOf, variantsOf, type Product, type Role, type Variant } from "./catalogue";
 
 export type { Role, Variant };
@@ -61,7 +62,7 @@ export type SearchInput = {
   limit?: number;
 };
 
-export function searchProducts(q: SearchInput) {
+export function searchProducts(q: SearchInput, ctx?: SafetyCtx) {
   const text = q.text?.toLowerCase().trim();
   const scored = visibleProducts
     .filter((p) => !(p.isKit && !q.includeKits))
@@ -71,6 +72,7 @@ export function searchProducts(q: SearchInput) {
     .filter((p) => !q.role || roleOf(p) === q.role)
     .filter((p) => !q.maxPrice || p.price <= q.maxPrice)
     .filter((p) => !q.excludeIds?.includes(p.id))
+    .filter((p) => isAllowed(p, ctx))
     .map((p) => {
       let score = 0;
       for (const key of q.concernKeys ?? []) {
@@ -174,7 +176,7 @@ function defaultSlots(p: Product): Slot[] {
   return ["pm"];
 }
 
-export function buildRoutine(entries: { id: string; slots?: Slot[] }[]): Routine & { rejected: string[] } {
+export function buildRoutine(entries: { id: string; slots?: Slot[] }[], ctx?: SafetyCtx): Routine & { rejected: string[] } {
   const { invalid } = validate(entries.map((e) => e.id));
   const items: RoutineItem[] = [];
   const families = new Set<string>();
@@ -182,6 +184,10 @@ export function buildRoutine(entries: { id: string; slots?: Slot[] }[]): Routine
   for (const e of entries) {
     const p = getProduct(e.id);
     if (!p || !p.available || p.duplicateOf) continue;
+    if (!isAllowed(p, ctx)) {
+      rejected.push(`${p.id}: not suitable for this customer (pregnancy or skin-type safety rule)`);
+      continue;
+    }
     if (families.has(p.family)) {
       rejected.push(`${p.id}: another size/scent of "${p.displayName}" is already in the routine`);
       continue;
@@ -262,7 +268,8 @@ export function updateRoutine(
   action: "remove" | "add" | "swap",
   productId: string,
   replacementId?: string,
-  slots?: Slot[]
+  slots?: Slot[],
+  ctx?: SafetyCtx
 ) {
   const entries: { id: string; slots?: Slot[] }[] = (current?.items ?? []).map((i) => ({ id: i.id, slots: i.slots }));
   let next = entries;
@@ -272,7 +279,7 @@ export function updateRoutine(
     next = entries.map((e) => (e.id === productId ? { id: replacementId ?? "", slots } : e));
     if (!entries.some((e) => e.id === productId)) return { error: `"${productId}" is not in the current routine.` };
   }
-  return buildRoutine(next);
+  return buildRoutine(next, ctx);
 }
 
 export { concernLabels };

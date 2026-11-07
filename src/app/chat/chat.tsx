@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ProductCard, Routine, Variant } from "@/lib/engine";
 import { CONCERN_LABELS } from "@/lib/concerns";
+import { PREGNANCY_LINE, mentionsPregnancy, allUserText } from "@/lib/safety-text";
 import CartLink from "@/components/cart-link";
 import { addToCart, useCart } from "@/lib/cart";
 import { CardContext, CompareTable, ProductCardView, RoutineChatCard, RoutineView } from "./parts";
@@ -155,6 +156,7 @@ export default function Chat() {
   };
 
   const profile = useMemo(() => currentProfile(messages as Msg[]), [messages]);
+  const pregnant = useMemo(() => mentionsPregnancy(allUserText(messages as Msg[])), [messages]);
   const routineIds = useMemo(() => new Set((routine?.items ?? []).map((i) => i.id)), [routine]);
 
   // Cart (shared across chats, saved in this browser)
@@ -185,7 +187,7 @@ export default function Chat() {
   const changeRoutine = async (entries: { id: string; slots?: string[] }[], note: string, input: object) => {
     const before = routine?.items ?? [];
     try {
-      const res = await fetch("/api/routine", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entries }) });
+      const res = await fetch("/api/routine", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entries, pregnant }) });
       if (!res.ok) throw new Error();
       const r = (await res.json()) as Routine;
       // keep the size/scent choices the customer already made
@@ -236,7 +238,7 @@ export default function Chat() {
           : []
       : [];
   const healthChips =
-    status === "ready" && !ask && profile.pregnantOrNursing === undefined && !profile.sensitivities && lastParts.some((p) => p.state === "output-available" && (p.type === "tool-recommend_products" || p.type === "tool-build_routine"))
+    status === "ready" && !ask && !pregnant && profile.pregnantOrNursing === undefined && !profile.sensitivities && lastParts.some((p) => p.state === "output-available" && (p.type === "tool-recommend_products" || p.type === "tool-build_routine"))
       ? ["No allergies, not pregnant", "I'm pregnant or nursing", "I have an allergy"]
       : [];
   const followUpText: Record<string, string> = {
@@ -297,7 +299,8 @@ export default function Chat() {
                 role={m.role}
                 parts={m.parts as Part[]}
                 streaming={busy && m.id === last?.id}
-                askHealth={m.id === last?.id && !busy && profile.pregnantOrNursing === undefined && !profile.sensitivities}
+                askHealth={m.id === last?.id && !busy && !pregnant && profile.pregnantOrNursing === undefined && !profile.sensitivities}
+                pregnant={pregnant}
                 onOpenRoutine={() => setSheetOpen(true)}
                 onCartAll={onCartAll}
               />
@@ -507,6 +510,7 @@ function Message({
   parts,
   streaming,
   askHealth,
+  pregnant,
   onOpenRoutine,
   onCartAll,
 }: {
@@ -514,6 +518,7 @@ function Message({
   parts: Part[];
   streaming: boolean;
   askHealth: boolean;
+  pregnant: boolean;
   onOpenRoutine: () => void;
   onCartAll: (r: Routine) => void;
 }) {
@@ -562,6 +567,7 @@ function Message({
           return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} onCartAll={onCartAll} />;
         return null;
       })}
+      {pregnant && hasResults && !streaming && <Bubble>{PREGNANCY_LINE}</Bubble>}
       {askHealth && hasResults && !streaming && (
         <Bubble>Do you have any allergies, or are you pregnant or nursing? Tell me if you&apos;d like me to account for that in these picks.</Bubble>
       )}
