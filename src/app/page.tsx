@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { categoryStats, topRated, topKits, reviewStats, type Product } from "@/lib/catalogue";
+import { categoryStats, topRated, topKits, type Product } from "@/lib/catalogue";
 import { CONCERN_LABELS } from "@/lib/concerns";
 import ResumeChat from "@/components/resume-chat";
 import CartLink from "@/components/cart-link";
@@ -88,7 +88,6 @@ function ProductTile({ p }: { p: Product }) {
 }
 
 export default function Home() {
-  const stats = reviewStats();
   const tops = topRated(6);
   const kits = topKits(4);
   return (
@@ -140,10 +139,6 @@ export default function Home() {
           <Photo id="body" priority className="rounded-3xl animate-fade-up" />
           <Photo id="hair" className="mt-10 rounded-3xl animate-fade-up [animation-delay:0.15s]" />
           <Photo id="sun" className="rounded-3xl animate-fade-up [animation-delay:0.3s]" />
-          </div>
-          <div className="mx-auto mt-6 w-fit animate-float rounded-full bg-white px-6 py-3 text-center text-navy shadow-xl shadow-navy/10 ring-1 ring-sky-2">
-            <span className="inline-flex items-center gap-1 font-serif text-2xl text-blue">{stats.avg}<Star className="h-5 w-5" /></span>
-            <span className="ml-2 text-sm">average from {stats.reviews.toLocaleString("en-IN")} reviews</span>
           </div>
         </div>
       </section>
@@ -256,21 +251,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Social proof: real numbers from the catalogue */}
-      <section className="mx-auto max-w-6xl px-5 py-20 sm:px-8">
-        <div className="reveal grid gap-6 text-center sm:grid-cols-3">
-          {[
-            [`${stats.avg} / 5`, "average rating across the range"],
-            [stats.reviews.toLocaleString("en-IN") + "+", "customer reviews on bebodywise.com"],
-            [String(stats.products), "different products to choose from"],
-          ].map(([big, small]) => (
-            <div key={small} className="rounded-3xl bg-white p-6 ring-1 ring-sky-2/70">
-              <p className="font-serif text-4xl text-blue">{big}</p>
-              <p className="mt-2 text-sm text-navy/70">{small}</p>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* FAQ */}
       <section className="mx-auto max-w-3xl px-5 pb-20 sm:px-8">
