@@ -108,7 +108,7 @@ export default function Home() {
       </header>
 
       {/* Hero */}
-      <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-8 sm:px-8 lg:grid-cols-2 lg:pt-16">
+      <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pb-24 pt-8 sm:px-8 lg:grid-cols-2 lg:pt-16">
         <div className="animate-fade-up">
           <p className="mb-5 text-sm font-medium uppercase tracking-[0.2em] text-slate">
             Every body works wonders
@@ -144,7 +144,7 @@ export default function Home() {
       <ResumeChat />
 
       {/* Shop by concern */}
-      <section className="mx-auto max-w-6xl px-5 pb-16 pt-4 sm:px-8">
+      <section className="mx-auto max-w-6xl px-5 pb-20 pt-6 sm:px-8">
         <h2 className="reveal font-serif text-3xl text-navy sm:text-4xl">What&apos;s on your mind?</h2>
         <p className="reveal mt-3 max-w-lg text-navy/70">Tap a concern and we&apos;ll start from there.</p>
         <div className="mt-6 flex flex-wrap gap-2.5">
@@ -161,10 +161,10 @@ export default function Home() {
       </section>
 
       {/* How it works */}
-      <section className="bg-sky/60 py-20">
+      <section className="bg-sky/60 py-24">
         <div className="mx-auto max-w-6xl px-5 sm:px-8">
           <h2 className="font-serif text-3xl text-navy sm:text-4xl">How it works</h2>
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
+          <div className="mt-12 grid gap-6 md:grid-cols-3">
             {steps.map((s) => (
               <div key={s.n} className="reveal rounded-3xl bg-white p-7 ring-1 ring-sky-2/50">
                 <span className="font-serif text-3xl text-blue">{s.n}</span>
@@ -182,7 +182,7 @@ export default function Home() {
         <p className="mt-3 max-w-lg text-navy/70">
           Pick a place to begin, or just tell the guide in your own words.
         </p>
-        <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-5">
+        <div className="mt-12 grid grid-cols-2 gap-5 sm:gap-6 lg:grid-cols-5">
           {categories.map((c) => {
             const stats = categoryStats(c.key);
             return (
@@ -200,7 +200,7 @@ export default function Home() {
       </section>
 
       {/* Top rated */}
-      <section className="mx-auto max-w-6xl px-5 pb-20 sm:px-8">
+      <section className="mx-auto max-w-6xl px-5 pb-24 sm:px-8">
         <h2 className="reveal font-serif text-3xl text-navy sm:text-4xl">Customer favourites</h2>
         <p className="reveal mt-3 max-w-lg text-navy/70">The best-reviewed everyday products, rated by real customers on bebodywise.com.</p>
         <div className="mt-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
@@ -211,7 +211,7 @@ export default function Home() {
       </section>
 
       {/* Kits */}
-      <section className="bg-sky/60 py-20">
+      <section className="bg-sky/60 py-24">
         <div className="mx-auto max-w-6xl px-5 sm:px-8">
           <h2 className="reveal font-serif text-3xl text-navy sm:text-4xl">Kits &amp; bundles</h2>
           <p className="reveal mt-3 max-w-lg text-navy/70">Several products in one pack, with the saving shown against the listed price.</p>
@@ -243,7 +243,7 @@ export default function Home() {
 
 
       {/* FAQ */}
-      <section className="mx-auto max-w-3xl px-5 pb-20 sm:px-8">
+      <section className="mx-auto max-w-3xl px-5 pb-24 sm:px-8">
         <h2 className="reveal font-serif text-3xl text-navy sm:text-4xl">Good to know</h2>
         <div className="mt-8 divide-y divide-sky-2 rounded-3xl bg-white px-6 ring-1 ring-sky-2/70">
           {FAQ.map(([q, a]) => (
@@ -259,7 +259,7 @@ export default function Home() {
       </section>
 
       {/* Final call to action */}
-      <section className="mx-auto max-w-6xl px-5 pb-20 sm:px-8">
+      <section className="mx-auto max-w-6xl px-5 pb-24 sm:px-8">
         <div className="reveal rounded-[2.5rem] bg-navy px-8 py-14 text-center text-mist sm:py-20">
           <h2 className="mx-auto max-w-xl font-serif text-3xl sm:text-5xl">Ready for a routine that fits you?</h2>
           <Link

@@ -291,7 +291,7 @@ export default function Chat() {
       </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6 sm:px-6">
+          <div className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-8 sm:px-6">
             {restored && messages.length === 0 && (
               <div className="animate-fade-up pt-8 text-center">
                 <h1 className="font-serif text-3xl text-navy sm:text-4xl">What can I help you with?</h1>
