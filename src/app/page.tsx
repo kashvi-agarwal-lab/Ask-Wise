@@ -125,7 +125,7 @@ export default function Home() {
           <div className="mt-9 flex flex-wrap items-center gap-4">
             <Link
               href={CTA}
-              className="rounded-full bg-navy px-8 py-4 text-base font-medium text-mist shadow-lg shadow-navy/15 transition hover:-translate-y-0.5 hover:bg-blue"
+              className="rounded-full bg-blue px-8 py-4 text-base font-medium text-mist shadow-lg shadow-navy/15 transition hover:-translate-y-0.5 hover:bg-navy"
             >
               Find my routine
             </Link>

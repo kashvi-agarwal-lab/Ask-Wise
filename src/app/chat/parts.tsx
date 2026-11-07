@@ -494,7 +494,7 @@ export function RoutineChatCard({ r, onOpen, onCartAll }: { r: Routine; onOpen: 
           <span className="font-serif text-2xl text-navy">₹{r.total}</span>
           {r.savings > 0 && <span className="ml-2 text-xs text-blue">save ₹{r.savings}</span>}
         </span>
-        <button onClick={onOpen} className="rounded-full bg-navy px-4 py-2 text-sm font-medium text-mist transition hover:bg-blue lg:hidden">
+        <button onClick={onOpen} className="rounded-full bg-blue px-4 py-2 text-sm font-medium text-mist transition hover:bg-navy lg:hidden">
           See full routine
         </button>
         <span className="hidden text-xs text-slate lg:inline">Full routine is in the side panel →</span>

@@ -29,7 +29,7 @@ export default function ResumeChat() {
           <p className="mt-1 truncate font-serif text-xl text-navy">&ldquo;{first}&rdquo;</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/chat" className="rounded-full bg-navy px-5 py-2.5 text-sm font-medium text-mist transition hover:bg-blue">
+          <Link href="/chat" className="rounded-full bg-blue px-5 py-2.5 text-sm font-medium text-mist transition hover:bg-navy">
             Continue chat
           </Link>
           <button

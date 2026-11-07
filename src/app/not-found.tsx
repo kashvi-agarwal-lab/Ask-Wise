@@ -10,7 +10,7 @@ export default function NotFound() {
         <Link href="/" className="rounded-full border border-navy/20 px-6 py-3 text-navy transition hover:bg-sky">
           Home
         </Link>
-        <Link href="/chat" className="rounded-full bg-navy px-6 py-3 font-medium text-mist transition hover:bg-blue">
+        <Link href="/chat" className="rounded-full bg-blue px-6 py-3 font-medium text-mist transition hover:bg-navy">
           Find my routine
         </Link>
       </div>

@@ -9,7 +9,7 @@
   --color-mist: #f5f9fe;   /* page background */
   --color-slate: #5a7298;  /* muted text */
   --color-aqua: #bfebef;   /* fresh highlight */
-  --color-ink: #0b1b33;
+  --color-ink: #2b3548; /* soft charcoal-navy for body text, never pure black */
 
   --font-serif: var(--font-fraunces), Georgia, serif;
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;

@@ -95,7 +95,7 @@ export default function CartView() {
           <div className="mt-8 rounded-3xl bg-white p-8 text-center ring-1 ring-sky-2/70">
             <p className="font-serif text-xl text-navy">Your cart is empty</p>
             <p className="mt-2 text-sm text-slate">Chat with the guide and tap &ldquo;Add to cart&rdquo; on products or routines you like.</p>
-            <Link href="/chat" className="mt-5 inline-block rounded-full bg-navy px-6 py-3 text-sm font-medium text-mist transition hover:bg-blue">
+            <Link href="/chat" className="mt-5 inline-block rounded-full bg-blue px-6 py-3 text-sm font-medium text-mist transition hover:bg-navy">
               Find my routine
             </Link>
           </div>
@@ -187,7 +187,7 @@ export default function CartView() {
                     setShared(null);
                     router.replace("/cart");
                   }}
-                  className="mt-3 w-full rounded-full bg-navy py-3 text-sm font-medium text-mist transition hover:bg-blue"
+                  className="mt-3 w-full rounded-full bg-blue py-3 text-sm font-medium text-mist transition hover:bg-navy"
                 >
                   Add all to my cart
                 </button>

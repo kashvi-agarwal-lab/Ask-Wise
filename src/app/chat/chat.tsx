@@ -383,7 +383,7 @@ export default function Chat() {
             <button
               type="submit"
               disabled={busy || !input.trim()}
-              className="rounded-full bg-navy px-6 py-3 font-medium text-mist transition hover:bg-blue disabled:opacity-40"
+              className="rounded-full bg-blue px-6 py-3 font-medium text-mist transition hover:bg-navy disabled:opacity-40"
             >
               Send
             </button>
