@@ -19,6 +19,39 @@ export function displayIngredients(p: Product): string[] {
   return p.actives.map((a) => a.label);
 }
 
+// What each ingredient is known for, in plain words. Kept soft ("known for"), never a medical claim.
+const INGREDIENT_NOTES: [RegExp, string][] = [
+  [/salicylic|\bsa\b|\bbha\b/i, "known for unclogging pores"],
+  [/glycolic/i, "known for gently exfoliating dead skin"],
+  [/lactic/i, "known for gently exfoliating and hydrating"],
+  [/\baha\b/i, "known for exfoliating dead skin cells"],
+  [/benzoyl/i, "known for targeting acne-causing bacteria"],
+  [/niacinamide/i, "known for supporting the skin barrier and an even-looking tone"],
+  [/urea/i, "known for hydrating and softening rough, dry skin"],
+  [/ceramide/i, "known for supporting the skin barrier"],
+  [/peptide/i, "known for supporting the skin barrier"],
+  [/kojic/i, "known for brightening the look of dark patches"],
+  [/redensyl|procapil|baicapil|aminexil|anagain|hair growth actives/i, "a hair-growth active used in thinning-hair formulas"],
+  [/rosemary/i, "a botanical traditionally used in hair care"],
+  [/biotin/i, "a vitamin often used to support hair"],
+  [/ketoconazole|zpto|zinc pyrithione/i, "an anti-dandruff ingredient"],
+  [/argan/i, "known for conditioning hair"],
+  [/shea|cocoa/i, "known for moisturising"],
+  [/magnesium/i, "a mineral often used in body-care for muscle comfort"],
+  [/zinc oxide|titanium|mineral/i, "a mineral sun filter"],
+];
+
+/** Plain-words notes for the first two key ingredients of a product. */
+export function ingredientNotes(names: string[]): { name: string; note: string }[] {
+  const out: { name: string; note: string }[] = [];
+  for (const n of names) {
+    const hit = INGREDIENT_NOTES.find(([re]) => re.test(n));
+    if (hit && !out.some((o) => o.note === hit[1])) out.push({ name: n.replace(/^[\d.]+%\s*/, "").replace(/^SA$/i, "Salicylic acid"), note: hit[1] });
+    if (out.length === 2) break;
+  }
+  return out;
+}
+
 /** Short card data: everything the UI needs to draw a product card, taken from the catalogue. */
 export function card(p: Product) {
   return {
@@ -48,6 +81,7 @@ export function card(p: Product) {
 export function cardFull(p: Product) {
   return {
     ...card(p),
+    ingredientNotes: ingredientNotes(displayIngredients(p)),
     keyIngredients: (p.keyIngredients ?? []).slice(0, 4),
     howToUse: (p.howToUse ?? []).slice(0, 5),
     precautions: (p.precautions ?? []).map((x) => x.text).slice(0, 3),

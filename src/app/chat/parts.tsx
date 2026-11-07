@@ -229,7 +229,19 @@ export function ProductCardView({
         <p className={`mt-2 rounded-2xl px-3 py-2 text-sm leading-snug ${badge ? "bg-sky text-navy" : "text-slate"}`}>{note}</p>
       )}
       <div className="mt-2 px-1">
-        {why && <Expand title="Why for you">{why}</Expand>}
+        {(why || (c.ingredientNotes?.length ?? 0) > 0) && (
+          <Expand title="Why for you">
+            {(c.ingredientNotes ?? []).map((n) => (
+              <p key={n.name} className="mb-1">
+                <span className="font-medium text-navy">{n.name}</span> is {n.note}.
+              </p>
+            ))}
+            {why && <p className="mb-1">{why}</p>}
+            <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue hover:underline">
+              Read more on the official Be Bodywise page ↗
+            </a>
+          </Expand>
+        )}
         {c.keyIngredients.length > 0 && <Expand title="Key ingredients">{c.keyIngredients.join("; ")}</Expand>}
         {c.howToUse.length > 0 && (
           <Expand title="How to use">

@@ -583,6 +583,9 @@ function Message({
           return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} onCartAll={onCartAll} />;
         return null;
       })}
+      {hasResults && !streaming && (
+        <p className="px-1 text-xs leading-relaxed text-slate">Topical products work best alongside a healthy diet and lifestyle.</p>
+      )}
       {pregnant && hasResults && !streaming && <Bubble>{PREGNANCY_LINE}</Bubble>}
       {askHealth && hasResults && !streaming && (
         <Bubble>Do you have any allergies, or are you pregnant or nursing? Tell me if you&apos;d like me to account for that in these picks.</Bubble>
