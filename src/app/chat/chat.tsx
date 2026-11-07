@@ -78,10 +78,10 @@ function withVariant(messages: Msg[], oldId: string, v: Variant): Msg[] {
       if (out.cards?.some((x) => x.id === oldId)) return { ...p, output: { ...out, cards: out.cards.map(swap) } };
       if (out.items?.some((x) => x.id === oldId)) {
         const items = out.items.map(swap);
-        const rename = (ids: unknown) => (ids as string[]).map((id) => (id === oldId ? v.id : id));
+        const rename = (ids: unknown) => ((ids as string[] | undefined) ?? []).map((id) => (id === oldId ? v.id : id));
         return {
           ...p,
-          output: { ...out, items, am: rename(out.am), pm: rename(out.pm), weekly: rename(out.weekly), supplement: rename(out.supplement), total: sumPrice(items), savings: sumSavings(items) },
+          output: { ...out, items, am: rename(out.am), pm: rename(out.pm), daily: rename(out.daily), alt: rename(out.alt), weekly: rename(out.weekly), supplement: rename(out.supplement), total: sumPrice(items), savings: sumSavings(items) },
         };
       }
       return p;
@@ -192,7 +192,7 @@ export default function Chat() {
       if (!res.ok) throw new Error();
       const r = (await res.json()) as Routine;
       // keep the size/scent choices the customer already made
-      r.items = r.items.map((i) => ({ ...i, chosen: before.find((b) => b.id === i.id)?.chosen || (input as { chosen?: boolean }).chosen === true && entries[entries.length - 1]?.id === i.id }));
+      r.items = r.items.map((i) => ({ ...i, companion: before.find((b) => b.id === i.id)?.companion, chosen: before.find((b) => b.id === i.id)?.chosen || (input as { chosen?: boolean }).chosen === true && entries[entries.length - 1]?.id === i.id }));
       setMessages((prev) => [
         ...prev,
         { id: `local-${Date.now()}`, role: "assistant", parts: [{ type: "text", text: note }, { type: "tool-update_routine", toolCallId: `local-${Date.now()}`, state: "output-available", input, output: r }] } as (typeof prev)[number],

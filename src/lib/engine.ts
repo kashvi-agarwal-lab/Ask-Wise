@@ -1,14 +1,23 @@
 // The "app code" role: filters the catalogue, validates product IDs and does the maths.
 // The AI never invents products or prices; it can only use what these functions return.
-import { isAllowed, type SafetyCtx } from "./safety";
+import { isAllowed, strengthOf, type SafetyCtx } from "./safety";
+import { scheduleFor, needsWashFirst, type Slot } from "./schedule";
 import { visibleProducts, getProduct, concernLabels, pricesAsOf, roleOf, variantsOf, type Product, type Role, type Variant } from "./catalogue";
 
 export type { Role, Variant };
-export type Slot = "am" | "pm" | "weekly" | "supplement";
+export type { Slot };
 
 // The scent is the customer's choice, so it is never part of the product name shown on a card.
 const stripScent = (name: string) =>
   name.replace(/\s*[–-]\s*(flora|watermelon|aqua|oudh|fragrance[ -]?free|no fragrance)\s*$/i, "").replace(/\s*\((flora|watermelon|aqua|oudh)[^)]*\)\s*/i, " ").trim();
+
+/** Ingredients to SHOW: the official card text from the Be Bodywise page, not the app's own ingredient-scan tags. */
+export function displayIngredients(p: Product): string[] {
+  const hi = (p.highlightIngredients ?? "").split(/,|&| and /).map((x) => x.trim()).filter(Boolean);
+  if (hi.length) return hi;
+  if (p.keyIngredients?.length) return p.keyIngredients.flatMap((k) => k.split(/,/).map((x) => x.trim())).filter(Boolean);
+  return p.actives.map((a) => a.label);
+}
 
 /** Short card data: everything the UI needs to draw a product card, taken from the catalogue. */
 export function card(p: Product) {
@@ -29,7 +38,7 @@ export function card(p: Product) {
     tagline: p.tagline ?? null,
     concerns: p.concerns.filter((c) => c.strength === "primary").map((c) => c.label),
     concernKeys: p.concerns.map((c) => c.key),
-    actives: p.actives.map((a) => a.label),
+    actives: displayIngredients(p),
     role: roleOf(p),
     variants: variantsOf(p),
     chosen: false, // becomes true once the customer picks a size or scent themselves
@@ -157,13 +166,16 @@ export function validate(ids: string[]) {
 
 /* ---------------- Routine ---------------- */
 
-export type RoutineItem = ProductCard & { slots: Slot[]; step: string | null };
+export type RoutineItem = ProductCard & { slots: Slot[]; when: string; companion?: boolean; step: string | null };
 export type Routine = {
   items: RoutineItem[];
   am: string[];
   pm: string[];
+  daily: string[];
+  alt: string[]; // 2–3 times a week
   weekly: string[];
   supplement: string[];
+  notes: string[]; // plain explanations, e.g. why a companion product was added
   total: number;
   savings: number; // total discount versus MRP
   startSlow: string[];
@@ -171,24 +183,31 @@ export type Routine = {
   pricesAsOf: string;
 };
 
-function defaultSlots(p: Product): Slot[] {
-  if (p.isSupplement) return ["supplement"];
-  if (p.type === "sunscreen") return ["am"];
-  const freq = (p.usageFrequency ?? []).join(" ").toLowerCase();
-  if (p.type === "scrub" || /week/.test(freq)) return ["weekly"];
-  const { am, pm } = p.timeOfDay;
-  if (am && pm) return ["am", "pm"];
-  if (am) return ["am"];
-  if (pm) return ["pm"];
-  if (roleOf(p) === "deodorant" && /twice/.test(freq)) return ["am", "pm"]; // the product page says to use it twice a day
-  return ["pm"];
+/** Closest shampoo or conditioner in the range for the routine's hair concern. */
+function pickCompanion(kind: "shampoo" | "conditioner", concernKeys: string[], taken: Set<string>, ctx?: SafetyCtx): Product | undefined {
+  return visibleProducts
+    .filter((p) => p.category === "hair" && !p.isKit && !p.isSupplement && (kind === "shampoo" ? p.type === "shampoo" : roleOf(p) === "conditioner"))
+    .filter((p) => !taken.has(p.family) && isAllowed(p, ctx))
+    .sort((a, b) => fitScore(b, concernKeys) - fitScore(a, concernKeys) || popularity(b) - popularity(a))[0];
 }
 
-export function buildRoutine(entries: { id: string; slots?: Slot[] }[], ctx?: SafetyCtx): Routine & { rejected: string[] } {
+export function buildRoutine(
+  entries: { id: string; slots?: Slot[] }[],
+  ctx?: SafetyCtx,
+  opts?: { companions?: boolean }
+): Routine & { rejected: string[] } {
   const { invalid } = validate(entries.map((e) => e.id));
   const items: RoutineItem[] = [];
   const families = new Set<string>();
+  const notes: string[] = [];
   const rejected = [...invalid.map((id) => `${id}: not in catalogue`)];
+  const add = (p: Product, companion = false, before?: number) => {
+    families.add(p.family);
+    const sch = scheduleFor(p); // how often, from the product's own usage guidance
+    const item: RoutineItem = { ...cardFull(p), slots: sch.slots, when: sch.when, step: p.routineStep ?? null, ...(companion ? { companion: true } : {}) };
+    if (before !== undefined && before >= 0) items.splice(before, 0, item);
+    else items.push(item);
+  };
   for (const e of entries) {
     const p = getProduct(e.id);
     if (!p || !p.available || p.duplicateOf) continue;
@@ -200,29 +219,58 @@ export function buildRoutine(entries: { id: string; slots?: Slot[] }[], ctx?: Sa
       rejected.push(`${p.id}: another size/scent of "${p.displayName}" is already in the routine`);
       continue;
     }
-    families.add(p.family);
-    let slots = e.slots?.length ? e.slots : defaultSlots(p);
-    if (p.type === "sunscreen") slots = ["am"]; // sunscreen is always a morning step
-    if (p.isSupplement) slots = ["supplement"];
-    items.push({ ...cardFull(p), slots, step: p.routineStep ?? null });
+    add(p);
   }
-  return { ...finishRoutine(items), rejected };
+
+  // Companions: a hair serum used "after shampoo and conditioner" needs those steps to be followable.
+  if (opts?.companions && items.length) {
+    const prods = items.map((i) => getProduct(i.id)!);
+    const needs = prods.map(needsWashFirst);
+    const wantsShampoo = needs.some((n) => n.shampoo);
+    const wantsConditioner = needs.some((n) => n.conditioner);
+    const hasShampoo = prods.some((p) => p.type === "shampoo");
+    const hasConditioner = prods.some((p) => roleOf(p) === "conditioner");
+    const concernKeys = prods.flatMap((p) => p.concerns.filter((c) => c.strength === "primary").map((c) => c.key));
+    const firstHair = items.findIndex((i) => i.category === "hair");
+    const added: string[] = [];
+    if (wantsShampoo && !hasShampoo) {
+      const s = pickCompanion("shampoo", concernKeys, families, ctx);
+      if (s) {
+        add(s, true, firstHair);
+        added.push("shampoo");
+        if (/dandruff|ketoconazole|zpto/i.test(s.name + " " + s.type + " " + s.displayName))
+          notes.push("The Bodywise shampoos are anti-dandruff formulas, so this is the closest shampoo in the range. Use it gently, only 2–3 times a week.");
+      }
+    }
+    if ((wantsConditioner || wantsShampoo) && !hasConditioner) {
+      const c = pickCompanion("conditioner", concernKeys, families, ctx);
+      if (c) {
+        add(c, true, firstHair >= 0 ? firstHair + (added.length ? 1 : 0) : -1);
+        added.push("conditioner");
+      }
+    }
+    if (added.length)
+      notes.push(`Added a ${added.join(" and ")} so your hair products can be used the way their instructions say (they're applied after washing).`);
+  }
+  return { ...finishRoutine(items, notes), rejected };
 }
 
 const isStrong = (p: Product) =>
   p.actives.some((a) => a.exfoliant || a.key === "benzoyl-peroxide") || roleOf(p) === "exfoliator";
 
-function finishRoutine(items: RoutineItem[]): Routine {
+const SLOT_NAME: Record<string, string> = { am: "morning", pm: "evening", daily: "daily", alt: "few-times-a-week", weekly: "weekly", supplement: "supplement" };
+
+function finishRoutine(items: RoutineItem[], notes: string[] = []): Routine {
   const bySlot = (s: Slot) => items.filter((i) => i.slots.includes(s)).map((i) => i.id);
-  const prods = items.map((i) => ({ item: i, p: getProduct(i.id)! }));
+  const prods = items.map((i) => ({ item: i, p: getProduct(i.id)! })).filter((x) => x.p.category !== "hair"); // skin and body only: hair products carry ingredient-scan tags that are not strong actives
   const warnings: string[] = [];
 
   // Clash check 1: more than one exfoliating product in the same slot
-  for (const s of ["am", "pm", "weekly"] as Slot[]) {
+  for (const s of ["am", "pm", "daily", "alt", "weekly"] as Slot[]) {
     const ex = prods.filter(({ item, p }) => item.slots.includes(s) && p.actives.some((a) => a.exfoliant));
     if (ex.length > 1)
       warnings.push(
-        `Exfoliant layering: ${ex.map((x) => x.item.name).join(" + ")} are all exfoliating and share the ${s.toUpperCase()} slot. Use them on different days or start slowly, to avoid irritation.`
+        `Exfoliant layering: ${ex.map((x) => x.item.name).join(" + ")} are all exfoliating and share the ${SLOT_NAME[s]} step. Use them on different days or start slowly, to avoid irritation.`
       );
   }
   // Clash check 2: benzoyl peroxide together with acids
@@ -242,6 +290,8 @@ function finishRoutine(items: RoutineItem[]): Routine {
     warnings.push("Exfoliating ingredients can make skin more sun-sensitive: a sunscreen in the morning is recommended.");
   if (items.some((i) => i.isSupplement))
     warnings.push("Supplements: please check with a doctor before starting, especially if pregnant, nursing or on medication.");
+  for (const x of prods.filter(({ p }) => strengthOf(p) === 2 && !p.isSupplement))
+    warnings.push(`Overuse warning: ${x.item.name} contains a strong active. Use it only as scheduled (${x.item.when.split(". ")[0].toLowerCase()}): more often can dry, sting or irritate.`);
   warnings.push("Patch-test any new product on a small area for 24 hours before regular use.");
 
   // Start-slow plan: gentle basics first, then one strong active at a time
@@ -261,8 +311,11 @@ function finishRoutine(items: RoutineItem[]): Routine {
     items,
     am: bySlot("am"),
     pm: bySlot("pm"),
+    daily: bySlot("daily"),
+    alt: bySlot("alt"),
     weekly: bySlot("weekly"),
     supplement: bySlot("supplement"),
+    notes,
     total: items.reduce((sum, i) => sum + i.price, 0),
     savings: items.reduce((sum, i) => sum + (i.mrp ? i.mrp - i.price : 0), 0),
     startSlow,

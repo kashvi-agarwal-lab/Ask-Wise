@@ -26,13 +26,11 @@ import {
   buildRoutine,
   updateRoutine,
   type Routine,
-  type Slot,
 } from "@/lib/engine";
 
 export const maxDuration = 60;
 
 const concernKey = z.enum(Object.keys(concernLabels) as [string, ...string[]]);
-const slot = z.enum(["am", "pm", "weekly", "supplement"]);
 
 // Tool results are stored inside the chat messages, so the server needs no database:
 // we read the latest profile and routine back out of the conversation history.
@@ -278,12 +276,12 @@ export async function POST(req: Request) {
 
       build_routine: tool({
         description:
-          "Build a complete routine from product IDs. The app places each product in AM, PM, weekly or supplement slots, adds up the cost and returns safety warnings. Slots are optional overrides.",
+          "Build a complete routine from product IDs. The app works out how often each product is used from its own usage instructions (daily, morning, evening, a few times a week, weekly), adds any companion shampoo or conditioner a hair serum needs, adds up the cost and returns safety warnings. You never choose the schedule.",
         inputSchema: z.object({
-          products: z.array(z.object({ productId: z.string(), slots: z.array(slot).optional() })).min(1).max(8),
+          products: z.array(z.object({ productId: z.string() })).min(1).max(8),
         }),
         execute: async ({ products }) => {
-          const r = buildRoutine(products.map((p) => ({ id: p.productId, slots: p.slots as Slot[] | undefined })), safety());
+          const r = buildRoutine(products.map((p) => ({ id: p.productId })), safety(), { companions: true });
           routine = r;
           return r;
         },
@@ -296,11 +294,10 @@ export async function POST(req: Request) {
           action: z.enum(["remove", "add", "swap"]),
           productId: z.string().describe("the product to remove, add, or replace"),
           replacementId: z.string().optional().describe("for swap: the new product"),
-          slots: z.array(slot).optional(),
         }),
-        execute: async ({ action, productId, replacementId, slots }) => {
+        execute: async ({ action, productId, replacementId }) => {
           if (!routine) return { error: "There is no routine yet. Build one first with build_routine." };
-          const r = updateRoutine(routine, action, productId, replacementId, slots as Slot[] | undefined, safety());
+          const r = updateRoutine(routine, action, productId, replacementId, undefined, safety());
           if (!("error" in r)) routine = r;
           return r;
         },

@@ -7,7 +7,7 @@ const body = z.object({
   pregnant: z.boolean().optional(),
   mildOnly: z.boolean().optional(),
   entries: z
-    .array(z.object({ id: z.string().max(120), slots: z.array(z.enum(["am", "pm", "weekly", "supplement"])).optional() }))
+    .array(z.object({ id: z.string().max(120), slots: z.array(z.enum(["am", "pm", "daily", "alt", "weekly", "supplement"])).optional() }))
     .max(12),
 });
 

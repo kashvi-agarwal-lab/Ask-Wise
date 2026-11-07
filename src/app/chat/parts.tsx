@@ -165,8 +165,12 @@ export function ProductCardView({
   actions,
   badge,
   note,
+  when,
+  companion,
 }: {
   c: ProductCard;
+  when?: string; // how often to use it (routine view)
+  companion?: boolean;
   why?: string;
   actions?: React.ReactNode;
   badge?: string;
@@ -209,6 +213,14 @@ export function ProductCardView({
             <span key={a} className="rounded-full border border-sky-2 px-2.5 py-1 text-xs text-slate">Contains {a}</span>
           ))}
         </div>
+      )}
+
+      {when && (
+        <p className="mt-2 rounded-2xl bg-mist px-3 py-2 text-sm leading-snug text-navy">
+          <span className="font-medium">When: </span>
+          {when}
+          {companion && <span className="ml-1 text-xs text-slate">(added so the routine works)</span>}
+        </p>
       )}
 
       <VariantPicker c={c} />
@@ -296,23 +308,36 @@ export function CompareTable({ products }: { products: Detail[] }) {
 
 /* ---------- Routine ---------- */
 
-const SLOT_LABEL: [keyof Pick<Routine, "am" | "pm" | "weekly" | "supplement">, string][] = [
-  ["am", "Morning"],
-  ["pm", "Evening"],
-  ["weekly", "Weekly"],
-  ["supplement", "Supplements"],
-];
+// Each product appears ONCE (with its own "when"), grouped by how often it is used.
+const GROUP_ORDER = ["Morning", "Morning & evening", "Evening", "Daily", "2–3 times a week", "Once a week", "Supplements"];
+
+function groupLabel(slots: string[]): string {
+  const has = (s: string) => slots.includes(s);
+  if (has("supplement")) return "Supplements";
+  if (has("am") && has("pm")) return "Morning & evening";
+  if (has("am")) return "Morning";
+  if (has("pm")) return "Evening";
+  if (has("daily")) return "Daily";
+  if (has("alt")) return "2–3 times a week";
+  return "Once a week";
+}
+
+export function routineGroups(r: Routine): { label: string; items: Routine["items"] }[] {
+  const map = new Map<string, Routine["items"]>();
+  for (const it of r.items) {
+    const l = groupLabel(it.slots);
+    map.set(l, [...(map.get(l) ?? []), it]);
+  }
+  return GROUP_ORDER.filter((l) => map.has(l)).map((l) => ({ label: l, items: map.get(l)! }));
+}
 
 export function routineText(r: Routine) {
   const lines = ["My Bodywise routine", ""];
-  for (const [key, label] of SLOT_LABEL) {
-    const ids = r[key];
-    if (!ids.length) continue;
-    lines.push(`${label.toUpperCase()}`);
-    for (const id of ids) {
-      const it = r.items.find((x) => x.id === id)!;
+  for (const g of routineGroups(r)) {
+    lines.push(`${g.label.toUpperCase()}`);
+    for (const it of g.items) {
       const variant = [it.size, it.variants?.find((v) => v.id === it.id)?.scent].filter(Boolean).join(", ");
-      lines.push(`- ${it.name}${variant ? ` (${variant})` : ""}: ₹${it.price}`, `  Buy: ${it.url}`);
+      lines.push(`- ${it.name}${variant ? ` (${variant})` : ""}: ₹${it.price}`, `  When: ${it.when}`, `  Buy: ${it.url}`);
     }
     lines.push("");
   }
@@ -353,19 +378,18 @@ export function RoutineView({ r, onAsk, onRemove, onCartAll }: { r: Routine; onA
         </div>
       ))}
 
-      {SLOT_LABEL.map(([key, label]) => {
-        const ids = r[key];
-        if (!ids.length) return null;
+      {routineGroups(r).map((g) => {
         return (
-          <section key={key}>
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-widest text-slate">{label}</h3>
+          <section key={g.label}>
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-widest text-slate">{g.label}</h3>
             <div className="grid gap-3">
-              {ids.map((id) => {
-                const it = r.items.find((x) => x.id === id)!;
+              {g.items.map((it) => {
                 return (
                   <ProductCardView
-                    key={key + id}
+                    key={g.label + it.id}
                     c={it}
+                    when={it.when}
+                    companion={it.companion}
                     actions={
                       <span className="flex gap-3 text-sm">
                         <button onClick={() => onAsk(`Suggest alternatives for ${it.name} in my routine`)} className="text-slate hover:text-blue">
@@ -404,6 +428,12 @@ export function RoutineView({ r, onAsk, onRemove, onCartAll }: { r: Routine; onA
         Shop on bebodywise.com ↗
       </a>
 
+      {r.notes?.length > 0 && (
+        <ul className="space-y-1.5 rounded-2xl bg-sky p-3 text-sm leading-relaxed text-navy">
+          {r.notes.map((n) => <li key={n}>{n}</li>)}
+        </ul>
+      )}
+
       {r.startSlow?.length > 0 && (
         <section className="rounded-2xl border border-sky-2 bg-white p-4">
           <h3 className="font-serif text-lg text-navy">Start slowly</h3>
@@ -441,14 +471,11 @@ export function RoutineChatCard({ r, onOpen, onCartAll }: { r: Routine; onOpen: 
     <div className="rounded-3xl bg-white p-4 ring-1 ring-sky-2/70">
       <p className="font-serif text-xl text-navy">Your routine</p>
       <ul className="mt-2 space-y-1 text-sm text-ink/85">
-        {SLOT_LABEL.map(([key, label]) => {
-          const names = r[key].map((id) => r.items.find((x) => x.id === id)!.name);
-          return names.length ? (
-            <li key={key}>
-              <span className="font-medium text-navy">{label}:</span> {names.join(", ")}
-            </li>
-          ) : null;
-        })}
+        {routineGroups(r).map((g) => (
+          <li key={g.label}>
+            <span className="font-medium text-navy">{g.label}:</span> {g.items.map((i) => i.name).join(", ")}
+          </li>
+        ))}
       </ul>
       <div className="mt-3 flex items-center justify-between border-t border-sky-2 pt-3">
         <span>
