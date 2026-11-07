@@ -177,6 +177,8 @@ function precautionsFor(p, category) {
 // ---------- main ----------
 async function main() {
   const raw = JSON.parse(await fs.readFile(RAW, "utf8"));
+  // Ingredient copy aligned with each official product page (see scripts/audit-ingredients.mjs)
+  const ingredientOverrides = JSON.parse(await fs.readFile(path.join(ROOT, "data", "ingredient-overrides.json"), "utf8").catch(() => "{}"));
   const items = raw.products;
   const gaps = [];
 
@@ -289,7 +291,7 @@ async function main() {
       subtitle: p.subtitle,
       description: p.description,
       benefits: p.benefits,
-      highlightIngredients: p.highlightIngredients,
+      highlightIngredients: ingredientOverrides[p.id]?.highlightIngredients ?? p.highlightIngredients,
       keyIngredients: p.activeIngredients,
       fullIngredients: p.fullIngredients || null,
       formulatedWithout: p.formulatedWithout || null,

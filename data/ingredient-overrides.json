@@ -1,0 +1,13 @@
+{
+  "_note": "Ingredient copy aligned with each product's official bebodywise.com page (the page title and meta description, which list the headline actives). Found with scripts/audit-ingredients.mjs. Applied by scripts/build-catalogue.mjs.",
+  "hair-growth-serum-roll-on": { "highlightIngredients": "Redensyl, Procapil, Baicapil", "source": "official page title and description: Redensyl, Procapil, Baicapil" },
+  "hair-growth-serum-roll-on-50ml": { "highlightIngredients": "Redensyl, Procapil, Baicapil", "source": "official page title and description: Redensyl, Procapil, Baicapil" },
+  "hair-growth-serum-spray": { "highlightIngredients": "Redensyl, Procapil, Baicapil", "source": "official page title and description: Redensyl, Procapil, Baicapil" },
+  "folli-advanced-plus-hair-growth-serum": {
+    "highlightIngredients": "Redensyl, Rosemary, AnaGain, Procapil, Aminexil, Liposomal Caffeine, Copper Tripeptide",
+    "source": "official page title"
+  },
+  "deep-moisturizing-conditioner": { "highlightIngredients": "Biotin, Argan Oil, Shea Butter, Cocoa Butter", "source": "official page description: Biotin, Argan Oil, Shea & Cocoa Butters" },
+  "aha-bha-body-pack": { "highlightIngredients": "1% Salicylic Acid Body Wash, 5% Lactic Acid Body Lotion", "source": "official page title" },
+  "strawberry-skin-pack": { "highlightIngredients": "1% Salicylic Acid Body Wash, 5% Lactic Acid Body Lotion, 10% AHA Scrub", "source": "official page title" }
+}
