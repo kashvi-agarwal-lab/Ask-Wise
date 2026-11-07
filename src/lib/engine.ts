@@ -46,7 +46,15 @@ export function cardFull(p: Product) {
 }
 export type ProductCard = ReturnType<typeof cardFull>;
 
-const popularity = (p: Product) => (p.rating ?? 3) * Math.log10((p.reviewCount ?? 0) + 10);
+export const popularity = (p: Product) => (p.rating ?? 3) * Math.log10((p.reviewCount ?? 0) + 10);
+
+/** How well a product fits the customer's concerns: primary match 3, secondary 1. */
+export function fitScore(p: Product, concernKeys: string[]): number {
+  return concernKeys.reduce((s, k) => {
+    const c = p.concerns.find((x) => x.key === k);
+    return s + (c ? (c.strength === "primary" ? 3 : 1) : 0);
+  }, 0);
+}
 
 export type SearchInput = {
   concernKeys?: string[];

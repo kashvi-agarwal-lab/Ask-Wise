@@ -537,7 +537,11 @@ function Message({
   const isText = (p: Part) => p.type === "text" && !!p.text?.trim();
   const hasText = parts.some(isText);
   const hasResults = parts.some((p) => p.state === "output-available" && /^tool-(recommend_products|build_routine)$/.test(p.type));
-  const ordered = [...parts.filter(isText), ...parts.filter((p) => !isText(p))].filter(
+  // Treatments lead, supporting basics (cleansers, moisturisers, sunscreen) follow.
+  const KIND_ORDER: Record<string, number> = { treatment: 0, deodorant: 1, exfoliator: 2, cleanser: 3, moisturiser: 4, conditioner: 5, sunscreen: 6, supplement: 7 };
+  const rank = (p: Part) => (p.type === "tool-recommend_products" ? (KIND_ORDER[(p.output as { kind?: string } | undefined)?.kind ?? ""] ?? 9) : -1);
+  const nonText = parts.filter((p) => !isText(p));
+  const ordered = [...parts.filter(isText), ...nonText.map((p, i) => ({ p, i })).sort((a, b) => rank(a.p) - rank(b.p) || a.i - b.i).map((x) => x.p)].filter(
     (p) => !(streaming && !hasText && p.state === "output-available" && /^tool-(recommend_products|build_routine|update_routine|compare_products)$/.test(p.type))
   );
   return (

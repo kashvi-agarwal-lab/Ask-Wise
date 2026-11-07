@@ -17,6 +17,8 @@ import { isAllowed, strengthOf, type SafetyCtx } from "@/lib/safety";
 import { flowHint, questionState, applyAnswers, needsQuestionDue, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
 import {
   searchProducts,
+  fitScore,
+  popularity,
   productDetails,
   compare,
   validate,
@@ -256,6 +258,12 @@ export async function POST(req: Request) {
             best = pool.some((p) => p.id === best) ? best : pool[0].id;
             reason = `The mildest matching option for your ${/sensitive/i.test(profile.skinType ?? "") ? "sensitive" : "dry"} skin. Start slowly and patch-test, since any active can still irritate.`;
           }
+          // Purpose-built products lead: the pick that matches the customer's concern best is the headline.
+          if (!mild && concernKeys.length && valid.length > 1) {
+            const ranked = [...valid].sort((a, b) => fitScore(b, concernKeys) - fitScore(a, concernKeys) || popularity(b) - popularity(a));
+            const current = valid.find((p) => p.id === best);
+            if (!current || fitScore(ranked[0], concernKeys) > fitScore(current, concernKeys)) best = ranked[0].id;
+          }
           const cards = valid
             .map((p) => {
               const pick = picks.find((x) => x.productId === p.id);
@@ -263,7 +271,7 @@ export async function POST(req: Request) {
               const sanitizeMild = (t?: string) => (mild && /gentl|strip|soothing|mild|safe|suit/i.test(t ?? "") ? undefined : t);
               return { ...cardFull(p), why: auto || (mild && strengthOf(p) > 0) ? "" : (pick?.why ?? ""), chooseIf: sanitizeMild(chooseIf), isBest: p.id === best };
             })
-            .sort((a, b) => Number(b.isBest) - Number(a.isBest));
+            .sort((a, b) => Number(b.isBest) - Number(a.isBest) || fitScore(getProduct(b.id)!, concernKeys) - fitScore(getProduct(a.id)!, concernKeys));
           return { need, kind, cards, bestPickId: best, bestReason: reason, rejected: invalid };
         },
       }),

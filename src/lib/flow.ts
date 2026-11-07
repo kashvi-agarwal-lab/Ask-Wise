@@ -15,7 +15,7 @@ const isUnderarm = (profile: Profile) => /underarm|odour|odor|sweat/.test(concer
 
 /** The fixed "which kinds" choices, decided by the app from the customer's concern. */
 export function needsOptions(profile: Profile): string[] {
-  if (isHair(profile)) return ["Cleansing", "Treatment", "Conditioning"];
+  if (isHair(profile)) return ["Treatment", "Cleansing", "Conditioning"];
   if (isUnderarm(profile)) return ["Underarm care", "Cleansing", "Moisturising"];
   return ["Cleansing", "Treatment", "Moisturising", "Sun protection"];
 }
@@ -34,6 +34,9 @@ const isWellnessOnly = (profile: Profile) => {
   const c = concernText(profile).replace(/muscle-soreness|energy-immunity|bone-health|sleep/g, "");
   return WELLNESS.some((k) => concernText(profile).includes(k)) && !/acne|skin|hair|body|face|dry|tan|pigment/.test(c);
 };
+
+/** Order of recommendation groups: purpose-built treatments lead, supporting basics follow. */
+export const KIND_PRIORITY: Record<string, number> = { treatment: 0, deodorant: 1, exfoliator: 2, cleanser: 3, moisturiser: 4, conditioner: 5, sunscreen: 6, supplement: 7 };
 
 export type Group = { kind: Role; area: "face" | "body" | "scalp" | null; label: string };
 
@@ -68,7 +71,7 @@ export function requiredGroups(profile: Profile): Group[] {
     else if (perArea) areas.forEach((a) => groups.push({ kind, area: a, label: groupLabel(kind, a) }));
     else groups.push({ kind, area: areas.length === 1 ? areas[0] : null, label: groupLabel(kind, areas.length === 1 ? areas[0] : null) });
   }
-  return groups.slice(0, 8);
+  return groups.sort((a, b) => (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9)).slice(0, 8);
 }
 
 const QUESTION_TOOLS = ["tool-ask_question", "tool-ask_needs"];
