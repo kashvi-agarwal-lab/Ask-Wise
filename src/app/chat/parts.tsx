@@ -29,7 +29,7 @@ function BuyLink({ c }: { c: ProductCard }) {
       href={c.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 rounded-full bg-blue px-4 py-2 text-sm font-medium text-white transition hover:bg-navy"
+      className="inline-flex items-center gap-1 rounded-full bg-blue px-3.5 py-1.5 text-[13px] font-medium text-white transition hover:bg-navy"
     >
       Buy on Bodywise ↗
     </a>
@@ -41,7 +41,7 @@ function BuyLink({ c }: { c: ProductCard }) {
 
 function Expand({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <details className="group border-t border-sky-2/70 py-2 text-sm">
+    <details className="group border-t border-sky-2/70 py-1.5 text-[13px]">
       <summary className="flex cursor-pointer list-none items-center justify-between font-medium text-navy marker:hidden">
         {title}
         <span className="text-blue transition group-open:rotate-45">+</span>
@@ -52,7 +52,7 @@ function Expand({ title, children }: { title: string; children: React.ReactNode 
 }
 
 // Catalogue photos are 4:3, so a 4:3 frame shows them whole (nothing cropped).
-function Thumb({ c, className = "w-28" }: { c: ProductCard; className?: string }) {
+function Thumb({ c, className = "w-24" }: { c: ProductCard; className?: string }) {
   const [failed, setFailed] = useState(false);
   return (
     <div className={`relative aspect-[4/3] shrink-0 overflow-hidden rounded-2xl bg-sky ${className}`}>
@@ -174,31 +174,32 @@ export function ProductCardView({
   const sizeText = c.size ? ` · ${c.size}` : "";
 
   return (
-    <div className={`rounded-3xl bg-white p-3 ${badge ? "ring-2 ring-blue" : "ring-1 ring-sky-2/70"}`}>
+    <div className={`rounded-2xl bg-white p-3 shadow-sm shadow-navy/5 ${badge ? "ring-2 ring-blue" : "ring-1 ring-sky-2/70"}`}>
       {badge && (
-        <span className="mb-2 ml-1 inline-block rounded-full bg-blue px-3 py-1 text-xs font-medium tracking-wide text-white">★ {badge}</span>
+        <span className="mb-1.5 inline-block rounded-full bg-blue px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-white">★ {badge}</span>
       )}
       <div className="flex gap-3">
         <Thumb c={c} />
         <div className="min-w-0 flex-1 py-0.5">
-          <p className="font-medium leading-snug text-navy">
+          <p className="text-[15px] font-medium leading-snug text-navy">
             {c.name}
             {sizeText && <span className="font-normal text-slate">{sizeText}</span>}
           </p>
-          <p className="mt-0.5 text-sm">
+          {c.tagline && <p className="mt-0.5 line-clamp-1 text-[13px] text-slate">{c.tagline}</p>}
+          <p className="mt-1 text-sm">
             <Price price={c.price} mrp={c.mrp} />
           </p>
-          {c.rating ? <p className="mt-0.5 text-xs text-slate">★ {c.rating} ({c.reviewCount} reviews)</p> : null}
+          {c.rating ? <p className="mt-0.5 text-xs text-slate">★ {c.rating} · {c.reviewCount} reviews</p> : null}
         </div>
       </div>
 
       {(matched.length > 0 || c.actives.length > 0) && (
-        <div className="mt-2 flex flex-wrap gap-1.5 px-1">
+        <div className="mt-2 flex flex-wrap gap-1">
           {matched.map((m) => (
-            <span key={m} className="rounded-full bg-sky px-2.5 py-1 text-xs text-navy">✓ Matches your concern: {m}</span>
+            <span key={m} className="rounded-full bg-sky px-2 py-0.5 text-[11px] text-navy">✓ Matches: {m}</span>
           ))}
           {c.actives.slice(0, 2).map((a) => (
-            <span key={a} className="rounded-full border border-sky-2 px-2.5 py-1 text-xs text-slate">Contains {a}</span>
+            <span key={a} className="rounded-full border border-sky-2 px-2 py-0.5 text-[11px] text-slate">{a}</span>
           ))}
         </div>
       )}
@@ -214,7 +215,7 @@ export function ProductCardView({
       <VariantPicker c={c} />
 
       {note && (
-        <p className={`mt-2 rounded-2xl px-3 py-2 text-sm leading-snug ${badge ? "bg-sky text-navy" : "text-slate"}`}>{note}</p>
+        <p className={`mt-2 rounded-xl px-3 py-2 text-[13px] leading-snug ${badge ? "bg-sky text-navy" : "text-slate"}`}>{note}</p>
       )}
       <div className="mt-2 px-1">
         {(why || (c.ingredientNotes?.length ?? 0) > 0) && (
@@ -239,12 +240,12 @@ export function ProductCardView({
         <Expand title="Precautions">
           <ul className="list-disc space-y-1 pl-4">{precautions.map((s) => <li key={s}>{s}</li>)}</ul>
         </Expand>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sky-2/70 pb-1 pt-3">
-          <span className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sky-2/70 pb-0.5 pt-2.5">
+          <span className="flex flex-wrap items-center gap-1.5">
             <BuyLink c={c} />
             <button
               onClick={() => onCart(c)}
-              className="rounded-full border border-blue/40 px-4 py-2 text-sm font-medium text-blue transition hover:bg-sky"
+              className="rounded-full border border-blue/40 px-3.5 py-1.5 text-[13px] font-medium text-blue transition hover:bg-sky"
             >
               {cartIds.has(c.id) ? "✓ In cart · add another" : "Add to cart"}
             </button>
@@ -252,7 +253,7 @@ export function ProductCardView({
               <button
                 onClick={() => onAdd(c)}
                 disabled={inRoutine}
-                className="px-1 py-2 text-sm text-slate transition hover:text-blue disabled:text-slate/60"
+                className="px-1 py-1.5 text-[13px] text-slate transition hover:text-blue disabled:text-slate/60"
               >
                 {inRoutine ? "✓ In routine" : "+ Routine"}
               </button>
