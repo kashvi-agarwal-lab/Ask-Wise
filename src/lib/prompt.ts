@@ -12,6 +12,12 @@ export type Profile = {
   mode?: "individual" | "routine";
   needs?: string[]; // kinds of products wanted: cleansing, treatment, moisturising, sun protection
   decideForMe?: boolean; // customer said "you decide"
+  hairPattern?: string; // where they notice hair fall most
+  duration?: string;
+  history?: string; // what they have tried before
+  answered?: string[]; // ids of the app's questions answered with real information
+  unsure?: string[]; // ids answered "Not sure"
+  askedIds?: string[]; // ids of the app's questions already asked
 };
 
 export function systemPrompt(profile: Profile, hasRoutine: boolean, flow = "", alerts = "") {

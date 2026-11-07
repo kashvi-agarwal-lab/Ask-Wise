@@ -14,7 +14,8 @@ import { concernLabels, getProduct, roleOf } from "@/lib/catalogue";
 import { systemPrompt, type Profile } from "@/lib/prompt";
 import { mentionsPregnancy, allUserText, needsDoctor, recentUserText, dryOrSensitive } from "@/lib/safety-text";
 import { isAllowed, strengthOf, type SafetyCtx } from "@/lib/safety";
-import { flowHint, questionState, applyAnswers, needsQuestionDue, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
+import { flowHint, questionState, applyAnswers, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
+import { nextScripted, starterMode } from "@/lib/script";
 import {
   searchProducts,
   fitScore,
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
   if (pregnantByText) profile = { ...profile, pregnantOrNursing: true };
   const safety = (): SafetyCtx => ({
     pregnant: pregnantByText || profile.pregnantOrNursing === true,
-    mildOnly: dryOrSensitive(allUserText(messages), profile.skinType), // dry or sensitive skin: no strong actives at all
+    mildOnly: dryOrSensitive(allUserText(messages), profile.skinType) || starter, // dry/sensitive skin, or too little known: no strong actives at all
   });
   let routine: Routine | null = lastToolOutput<Routine>(messages, "build_routine");
   const lastUpdate = lastToolOutput<Routine>(messages, "update_routine");
@@ -68,7 +69,12 @@ export async function POST(req: Request) {
     messages.findLastIndex((m) => m.parts.some((p) => p.type === `tool-${name}`));
   if (lastUpdate && order("update_routine") > order("build_routine")) routine = lastUpdate;
 
+  // The app's own next question (null = nothing more to ask, time to recommend)
+  const pending = () => nextScripted(profile, messages, needsOptions(profile));
+  const starter = starterMode(profile, messages);
+
   const shown = new Set<string>(); // products already shown in this reply: never show one twice
+  const doneGroups = new Set<string>(); // kind+area groups already shown in this reply: never show the same group twice
   // When the customer asks for alternatives, never offer what they have already seen or got in their routine.
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const lastUserText = (lastUser?.parts as { type: string; text?: string }[] | undefined)?.map((p) => p.text ?? "").join(" ") ?? "";
@@ -102,25 +108,25 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: getModel(),
-    instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked), alertText),
+    instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked, messages), alertText),
     messages: await convertToModelMessages(messages),
-    stopWhen: [isStepCount(14), hasToolCall("ask_question"), hasToolCall("ask_needs")], // a question always ends the turn so the customer can answer
+    stopWhen: [isStepCount(14), hasToolCall("ask_question"), hasToolCall("ask_needs"), hasToolCall("ask_scripted")], // a question always ends the turn so the customer can answer
     // The small free model sometimes searches and then just chats instead of showing products.
     // Once it has searched, it must finish with a real answer tool (ask / recommend / routine / compare).
     prepareStep: ({ steps, stepNumber }) => {
       if (referral) return { toolChoice: "none" as const }; // hard gate: no tools, so no product cards and no Buy links
       // Until we know "individual picks or a routine", the AI may not show products yet: it must ask.
-      const blocked = !profile.mode && !profile.decideForMe && questionState(messages).asked < MAX_QUESTIONS;
-      const ALL = ["update_profile", "search_products", "get_product_details", "compare_products", "recommend_products", "build_routine", "update_routine", "ask_needs", "ask_question"];
-      // The app asks the "which kinds of products" question itself (the AI kept skipping it).
-      if (stepNumber === 0 && needsQuestionDue(profile, messages))
-        return { toolChoice: { type: "tool" as const, toolName: "ask_needs" as const }, activeTools: ["ask_needs"] as never };
+      const next = questionState(messages).asked < MAX_QUESTIONS ? pending() : null;
+      const blocked = next !== null;
+      const ALL = ["update_profile", "search_products", "get_product_details", "compare_products", "recommend_products", "build_routine", "update_routine", "ask_needs", "ask_question", "ask_scripted"];
+      // The app asks its own questions (it never relies on the AI to remember or word them).
+      if (stepNumber === 0 && next) return { toolChoice: { type: "tool" as const, toolName: "ask_scripted" as const }, activeTools: ["ask_scripted"] as never };
       const used = new Set(steps.flatMap((s) => s.toolCalls.map((c) => c.toolName as string)));
-      const answered = ["ask_question", "ask_needs", "recommend_products", "build_routine", "update_routine", "compare_products"].some((t) => used.has(t));
+      const answered = ["ask_question", "ask_needs", "ask_scripted", "recommend_products", "build_routine", "update_routine", "compare_products"].some((t) => used.has(t));
       if (used.has("search_products") && !answered)
         return {
           toolChoice: "required" as const,
-          activeTools: (blocked ? ["ask_question"] : ["ask_question", "ask_needs", "recommend_products", "build_routine", "update_routine", "compare_products"]) as never,
+          activeTools: (blocked ? ["ask_scripted"] : ["ask_question", "ask_needs", "ask_scripted", "recommend_products", "build_routine", "update_routine", "compare_products"]) as never,
         };
       if (blocked) return { activeTools: ALL.filter((t) => t !== "recommend_products" && t !== "build_routine") as never };
       // The customer chose several kinds of products: make sure each one gets its own group.
@@ -214,6 +220,9 @@ export async function POST(req: Request) {
           bestReason: z.string().describe("one or two sentences on why it is the best pick for this customer"),
         }),
         execute: async ({ kind, area, picks, bestPickId, bestReason }) => {
+          const gkey = `${kind}|${area ?? ""}`;
+          if (doneGroups.has(gkey)) return { need: groupLabel(kind, area), kind, cards: [], bestPickId: undefined, bestReason: "", rejected: ["duplicate group"] };
+          doneGroups.add(gkey);
           const need = groupLabel(kind, area, /hair|scalp/.test((profile.concerns ?? []).join(" ").toLowerCase()));
           const { valid: found, invalid } = validate(picks.map((p) => p.productId));
           // The app, not the AI, decides what kind each product is. Wrong kind or already shown = rejected.
@@ -262,6 +271,12 @@ export async function POST(req: Request) {
             const current = valid.find((p) => p.id === best);
             if (!current || fitScore(ranked[0], concernKeys) > fitScore(current, concernKeys)) best = ranked[0].id;
           }
+          if (best && best !== bestPickId && !mild) {
+            // the app moved the headline to the closest purpose-built match, so the AI's reason no longer fits
+            const bp = getProduct(best);
+            const labels = (bp?.concerns ?? []).filter((c) => c.strength === "primary" && concernKeys.includes(c.key)).map((c) => c.label.toLowerCase());
+            reason = labels.length ? `Made for ${labels.slice(0, 2).join(" and ")}, the closest match to what you described.` : "The closest match to what you described.";
+          }
           const cards = valid
             .map((p) => {
               const pick = picks.find((x) => x.productId === p.id);
@@ -300,6 +315,15 @@ export async function POST(req: Request) {
           const r = updateRoutine(routine, action, productId, replacementId, undefined, safety());
           if (!("error" in r)) routine = r;
           return r;
+        },
+      }),
+
+      ask_scripted: tool({
+        description: "Ask the customer the app's next question. Takes no input: the app words the question and builds the buttons.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          const q = pending();
+          return q ?? { id: "none", question: "Is there anything else you'd like to tell me?", options: ["No, that's everything"] };
         },
       }),
 

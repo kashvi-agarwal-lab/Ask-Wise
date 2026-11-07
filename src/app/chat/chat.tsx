@@ -222,7 +222,7 @@ export default function Chat() {
   const showThinking = busy && !lastVisible;
   const ask =
     status === "ready" && last?.role === "assistant"
-      ? (lastParts.find((p) => (p.type === "tool-ask_question" || p.type === "tool-ask_needs") && p.state === "output-available")
+      ? (lastParts.find((p) => (p.type === "tool-ask_question" || p.type === "tool-ask_needs" || p.type === "tool-ask_scripted") && p.state === "output-available")
           ?.output as { options: string[]; multiSelect?: boolean } | undefined)
       : undefined;
   const chips = ask?.options;
@@ -554,7 +554,7 @@ function Message({
           return RESULT_TOOLS.includes(name) ? <CardSkeleton key={i} label={WORKING[name]} /> : <Typing key={i} label={WORKING[name]} />;
         }
         const out = p.output as Record<string, unknown>;
-        if (name === "ask_question" || name === "ask_needs") return <Bubble key={i}>{String(out.question)}</Bubble>;
+        if (name === "ask_question" || name === "ask_needs" || name === "ask_scripted") return <Bubble key={i}>{String(out.question)}</Bubble>;
         if (name === "recommend_products") {
           const g = out as unknown as { need: string; cards: (ProductCard & { why: string; chooseIf?: string; isBest: boolean })[]; bestReason: string };
           if (!g.cards?.length) return null;

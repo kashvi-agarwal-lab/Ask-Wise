@@ -3,8 +3,10 @@
 import type { UIMessage } from "ai";
 import type { Profile } from "./prompt";
 import type { Role } from "./catalogue";
+import { applyScriptedAnswer, areasFromText, concernKeysFromText, modeFromText, skinTypeFromText, starterMode } from "./script";
+import { allUserText } from "./safety-text";
 
-export const MAX_QUESTIONS = 4;
+export const MAX_QUESTIONS = 7; // a ceiling; the usual depth is 2 to 3 questions
 
 const RESULT_TOOLS = ["tool-recommend_products", "tool-build_routine", "tool-update_routine"];
 
@@ -74,7 +76,7 @@ export function requiredGroups(profile: Profile): Group[] {
   return groups.sort((a, b) => (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9)).slice(0, 8);
 }
 
-const QUESTION_TOOLS = ["tool-ask_question", "tool-ask_needs"];
+const QUESTION_TOOLS = ["tool-ask_question", "tool-ask_needs", "tool-ask_scripted"];
 
 /** How many questions were asked since the last results were shown (and whether "which kinds" was one). */
 export function questionState(messages: UIMessage[]) {
@@ -96,21 +98,36 @@ const textOf = (m?: UIMessage) =>
   (m?.parts as { type: string; text?: string }[] | undefined)?.filter((p) => p.type === "text").map((p) => p.text).join(" ").trim() ?? "";
 
 /**
- * Read the customer's latest answer to the questions the app asked, so the profile does not
- * depend on the AI remembering to save it.
+ * Rebuild what we know about the customer from what they typed and from their answers to the
+ * app's questions, so the profile never depends on the AI remembering to save anything.
  */
 export function applyAnswers(profile: Profile, messages: UIMessage[]): Profile {
-  // "You decide for me" counts only when the customer really said it (the AI used to set it
-  // after an unrelated "Not sure"), so ignore the AI's own value and re-read the conversation.
-  const next: Profile = { ...profile, decideForMe: undefined };
+  // "You decide for me" counts only when the customer really said it, so ignore the AI's own value.
+  const next: Profile = { ...profile, decideForMe: undefined, answered: [], unsure: [], askedIds: [] };
+
+  // 1. Things the customer already said, in their own words
+  const typed = allUserText(messages);
+  const keys = concernKeysFromText(typed);
+  next.concerns = [...new Set([...(next.concerns ?? []).filter((k) => k !== "acne" || !keys.includes("face-acne") && !keys.includes("body-acne")), ...keys])];
+  if (next.concerns.some((k) => k === "face-acne" || k === "body-acne")) next.concerns = next.concerns.filter((k) => k !== "acne");
+  const areas = areasFromText(typed, next.concerns);
+  if (areas.length) next.bodyAreas = [...new Set([...(next.bodyAreas ?? []), ...areas])];
+  if (!next.skinType) next.skinType = skinTypeFromText(typed);
+  if (!next.mode) next.mode = modeFromText(typed);
+
+  // 2. Their answers to the questions the app asked
   for (let i = 1; i < messages.length; i++) {
     if (messages[i].role !== "user" || messages[i - 1].role !== "assistant") continue;
     const reply = textOf(messages[i]);
     if (!reply) continue;
-    const parts = messages[i - 1].parts as { type: string; output?: { question?: string } }[];
+    const parts = messages[i - 1].parts as { type: string; output?: { question?: string; id?: string } }[];
+    const scripted = parts.find((p) => p.type === "tool-ask_scripted");
+    if (scripted?.output?.id) {
+      applyScriptedAnswer(next, scripted.output.id, reply, needsOptions);
+      continue;
+    }
     if (parts.some((p) => p.type === "tool-ask_needs")) {
       if (/decide/i.test(reply)) {
-        // "You decide for me" = recommend EVERY kind of product that applies (cleansing, treatment, moisturising, sun protection...)
         next.decideForMe = true;
         next.needs = needsOptions(next);
       } else next.needs = reply.split(",").map((s) => s.trim()).filter(Boolean);
@@ -142,27 +159,28 @@ export function needsQuestionDue(profile: Profile, messages: UIMessage[]): boole
   );
 }
 
-export function flowHint(profile: Profile, asked: number): string {
-  // (The app asks the "which kinds of products" question itself, so it is not in this list.)
+export function flowHint(profile: Profile, asked: number, messages: UIMessage[] = []): string {
+  // (The app asks its own questions in a fixed order, so this only says when to recommend and how.)
   const groups = requiredGroups(profile);
   const wants = groups.length
     ? `\nThe customer chose these kinds of products. You MUST make exactly one recommend_products call for EACH of these groups, using the given kind and area: ${groups.map((g) => `${g.label} (kind: ${g.kind}, area: ${g.area ?? "none"})`).join("; ")}. Make all of these calls together in one go, and do not skip any.${profile.decideForMe ? " The customer asked you to decide, so give a COMPLETE set covering every group above, with 2 options per group (3 only when clearly different). Never narrow it down to one product." : ""}`
     : "";
-  const head = `Questions asked so far for this request: ${asked} of ${MAX_QUESTIONS}.`;
+  const notes: string[] = [];
+  if (/hairline|parting/i.test(profile.hairPattern ?? ""))
+    notes.push("Hair fall is mostly at the hairline or parting: lead with the hair-growth treatment, and say results usually take about 3 months of steady use.");
+  if (/all over/i.test(profile.hairPattern ?? ""))
+    notes.push("Hair fall is all over the head: lead with the hair-growth treatment. Mention that general shedding can come from stress, sleep, diet, iron or thyroid issues, so a doctor can help if it continues or gets worse.");
+  if (/clumps/i.test(profile.hairPattern ?? ""))
+    notes.push("The customer sees clumps of hair when washing or combing: lead with the hair-growth treatment, but also say that noticeable or sudden clumps can have medical causes, so they should see a doctor if it is heavy or lasts more than a few weeks (never diagnose).");
+  if (/more than 6 months/i.test(profile.duration ?? ""))
+    notes.push("This has lasted more than 6 months: mention that a dermatologist or doctor can help with long-standing concerns.");
+  if (/strong actives/i.test(profile.history ?? ""))
+    notes.push("They have already used strong actives: do not stack more strong actives on top, and advise starting slowly.");
+  if (starterMode(profile, messages))
+    notes.push("The customer was unsure about most questions: give a gentle, low-risk STARTER set (mild cleanser, moisturiser, and sunscreen where relevant, nothing strong) and say honestly that this is 'a good place to start', not a full plan.");
+  const extra = notes.length ? `\n${notes.join("\n")}` : "";
+  const head = `Questions asked so far for this request: ${asked} of ${MAX_QUESTIONS}. The app asks the questions itself, in a fixed order; you do not need to ask any.`;
   if (asked >= MAX_QUESTIONS || profile.decideForMe)
-    return `${head}\nThe question limit is reached (or the customer asked you to decide). Do NOT ask anything more: pick sensible defaults yourself and recommend now.${wants}`;
-
-  const todo: string[] = [];
-  if (!profile.bodyAreas?.length)
-    todo.push("WHERE the concern is (face, body, scalp...). Skip if the customer already said, or it is obvious.");
-  if (!profile.skinType)
-    todo.push("SKIN TYPE (oily, dry, combination, normal, sensitive, not sure). Only for skin concerns.");
-  if (!profile.mode)
-    todo.push('MODE: "Would you like individual product picks, or a complete routine?" options ["Individual picks", "Complete routine"].');
-  if (profile.pregnantOrNursing === undefined && !profile.sensitivities)
-    todo.push(
-      "SAFETY: anything to avoid (pregnant or nursing, very sensitive skin, allergies). Only when the likely products contain strong actives such as acids, benzoyl peroxide or hair-growth actives."
-    );
-  if (!todo.length) return `${head}\nYou know enough. Recommend now.${wants}`;
-  return `${head}\nStill unknown, in priority order:\n${todo.map((t, i) => `${i + 1}. ${t}`).join("\n")}\nAsk ONLY the first item that is both unknown and relevant, with ask_question. If none is relevant, recommend now.${wants}`;
+    return `${head}\nThe question limit is reached (or the customer asked you to decide). Do NOT ask anything more: pick sensible defaults yourself and recommend now.${wants}${extra}`;
+  return `${head}\nWhen the app has no more questions, you recommend. Do not ask questions of your own unless the customer asks you something that needs a clarification.${wants}${extra}`;
 }
