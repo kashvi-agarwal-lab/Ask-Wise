@@ -53,7 +53,7 @@ const POPULAR_CONCERNS = [
 ];
 
 const FAQ = [
-  ["Is this medical advice?", "No. Bodywise Guide suggests Be Bodywise products and explains how to use them. It can't diagnose anything. For bleeding, a spreading rash, signs of infection or anything severe or persistent, please see a dermatologist or doctor."],
+  ["Is this medical advice?", "No. Ask Wise suggests Be Bodywise products and explains how to use them. It can't diagnose anything. For bleeding, a spreading rash, signs of infection or anything severe or persistent, please see a dermatologist or doctor."],
   ["How does it choose products?", "Only from the real Be Bodywise range. Every product, price and photo comes from the catalogue, and the app checks each suggestion before showing it. The AI explains the choices but never makes up products."],
   ["Can I choose a size or scent?", "Yes. When a product comes in different sizes or scents, you pick yours on the card and the routine total updates."],
   ["Where do I buy?", "Each product has a Buy on Bodywise button that opens its page on bebodywise.com. Prices shown are as of the date on the page and can change on the site."],
@@ -93,7 +93,7 @@ export default function Home() {
       {/* Top bar */}
       <header className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-5 sm:px-8">
         <span className="shrink-0 whitespace-nowrap font-serif text-lg tracking-tight text-navy sm:text-xl">
-          Bodywise <span className="text-blue">Guide</span>
+          Ask <span className="text-blue">Wise</span>
         </span>
         <div className="flex items-center gap-3">
           <CartLink className="px-3 text-sm sm:px-4 sm:py-2" />
@@ -111,10 +111,10 @@ export default function Home() {
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pb-24 pt-8 sm:px-8 lg:grid-cols-2 lg:pt-16">
         <div className="animate-fade-up">
           <p className="mb-5 text-sm font-medium uppercase tracking-[0.2em] text-slate">
-            Every body works wonders
+            Skin · Hair · Body, answered
           </p>
           <h1 className="font-serif text-5xl leading-[1.05] text-navy sm:text-6xl lg:text-7xl">
-            Care that starts with <em className="text-blue">listening.</em>
+            Don’t guess. <em className="text-blue">Ask Wise.</em>
           </h1>
           <p className="mt-6 max-w-md text-lg leading-relaxed text-navy/75">
             Chat with your personal skin and body-care consultant. Tell it what you need, and get
@@ -272,7 +272,7 @@ export default function Home() {
       </section>
 
       <footer className="border-t border-sky-2/50 px-5 py-8 text-center text-xs leading-relaxed text-slate">
-        Bodywise Guide gives product guidance, not medical advice. For persistent or severe skin or hair
+        Ask Wise gives product guidance, not medical advice. For persistent or severe skin or hair
         concerns, please see a dermatologist or doctor.
       </footer>
     </main>

@@ -13,15 +13,15 @@ const description =
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: "Bodywise Guide — your personal skin & body-care consultant",
+  title: "Ask Wise by Bodywise — Don’t guess. Ask Wise.",
   description,
   openGraph: {
-    title: "Bodywise Guide",
+    title: "Ask Wise by Bodywise",
     description,
-    siteName: "Bodywise Guide",
+    siteName: "Ask Wise",
     type: "website",
   },
-  twitter: { card: "summary_large_image", title: "Bodywise Guide", description },
+  twitter: { card: "summary_large_image", title: "Ask Wise by Bodywise", description },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

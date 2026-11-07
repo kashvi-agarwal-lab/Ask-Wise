@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 // The preview card shown when the link is shared on WhatsApp, Instagram, X, LinkedIn and so on.
-export const alt = "Bodywise Guide: your personal skin, hair and body-care consultant";
+export const alt = "Ask Wise by Bodywise: your personal skin, hair and body-care consultant";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -24,12 +24,12 @@ export default async function Image() {
           Be Bodywise
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", fontSize: 108, fontWeight: 700, lineHeight: 1.05 }}>Bodywise Guide</div>
+          <div style={{ display: "flex", fontSize: 108, fontWeight: 700, lineHeight: 1.05 }}>Ask Wise</div>
           <div style={{ display: "flex", fontSize: 44, marginTop: 28, color: "#e3eefc", maxWidth: 900 }}>
-            Tell us what you need. Get verified product picks or a full routine, with the total cost.
+            Don’t guess. Ask Wise. Verified Be Bodywise picks or a full routine, with the total cost.
           </div>
         </div>
-        <div style={{ display: "flex", fontSize: 34, color: "#bfebef" }}>Every body works wonders</div>
+        <div style={{ display: "flex", fontSize: 34, color: "#bfebef" }}>Skin · Hair · Body, answered</div>
       </div>
     ),
     { ...size }

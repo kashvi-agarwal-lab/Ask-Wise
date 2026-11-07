@@ -272,7 +272,7 @@ export default function Chat() {
         <header className="border-b border-sky-2/60 bg-white/80 backdrop-blur">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 sm:px-6">
           <Link href="/" className="shrink-0 whitespace-nowrap font-serif text-lg text-navy">
-            Bodywise <span className="hidden text-blue min-[400px]:inline">Guide</span>
+            Ask <span className="text-blue">Wise</span>
           </Link>
           <div className="flex items-center gap-2">
             <Link
