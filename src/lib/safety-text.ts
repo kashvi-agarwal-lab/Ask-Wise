@@ -43,3 +43,9 @@ export function recentUserText(messages: { role: string; parts: unknown[] }[], n
 export function allUserText(messages: { role: string; parts: unknown[] }[]): string {
   return recentUserText(messages, 1000);
 }
+
+/** Dry or sensitive skin, from what the customer said or the saved skin type. */
+export function dryOrSensitive(text: string, skinType?: string): boolean {
+  if (skinType && /\b(dry|sensitive)\b/i.test(skinType)) return true;
+  return /\b(dry|sensitive)\b[^.?!\n]{0,30}\bskin\b|\bskin\b[^.?!\n]{0,30}\b(dry|sensitive|flaky|tight)\b|\bsensitive\b/i.test(text);
+}

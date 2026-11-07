@@ -12,8 +12,8 @@ import { z } from "zod";
 import { getModel } from "@/lib/model";
 import { concernLabels, getProduct, roleOf } from "@/lib/catalogue";
 import { systemPrompt, type Profile } from "@/lib/prompt";
-import { mentionsPregnancy, allUserText, needsDoctor, recentUserText } from "@/lib/safety-text";
-import { isAllowed, type SafetyCtx } from "@/lib/safety";
+import { mentionsPregnancy, allUserText, needsDoctor, recentUserText, dryOrSensitive } from "@/lib/safety-text";
+import { isAllowed, strengthOf, type SafetyCtx } from "@/lib/safety";
 import { flowHint, questionState, applyAnswers, needsQuestionDue, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
 import {
   searchProducts,
@@ -57,7 +57,10 @@ export async function POST(req: Request) {
   // Pregnancy is read from what the customer typed, so the safety rule never depends on the AI remembering it.
   const pregnantByText = mentionsPregnancy(allUserText(messages));
   if (pregnantByText) profile = { ...profile, pregnantOrNursing: true };
-  const safety = (): SafetyCtx => ({ pregnant: pregnantByText || profile.pregnantOrNursing === true });
+  const safety = (): SafetyCtx => ({
+    pregnant: pregnantByText || profile.pregnantOrNursing === true,
+    mildOnly: dryOrSensitive(allUserText(messages), profile.skinType), // dry or sensitive skin: no strong actives at all
+  });
   let routine: Routine | null = lastToolOutput<Routine>(messages, "build_routine");
   const lastUpdate = lastToolOutput<Routine>(messages, "update_routine");
   // Whichever of build/update happened last is the current routine.
@@ -90,6 +93,10 @@ export async function POST(req: Request) {
   if (referral)
     alerts.push(
       "This customer described something that needs a doctor, not a product: severe, painful, cystic or scarring acne, or eczema, psoriasis, bleeding, a spreading rash or infection. Respond with warm empathy, say clearly that this needs a dermatologist (or doctor) to assess and treat, and explain in a sentence that products alone are not the right first step. Do NOT recommend, name or link any product, and do not offer to build a routine or ask more questions. Keep it to 3 or 4 short sentences. You may say they are welcome to come back for gentle everyday basics after seeing a doctor."
+    );
+  if (safety().mildOnly)
+    alerts.push(
+      "This customer has DRY or SENSITIVE skin. The app already removes strong actives (2%+ salicylic acid, benzoyl peroxide, 5%+ acids, scrubs) from your tools. Never call any product that contains an active ingredient 'gentle', and never say it 'won't strip', 'won't dry' or 'is safe for' dry or sensitive skin. Say 'milder', and advise starting slowly and patch-testing. Lead with the mildest option."
     );
   const alertText = alerts.join("\n");
 
@@ -240,12 +247,21 @@ export async function POST(req: Request) {
             auto = valid.length > 0;
             reason = "A well-reviewed Bodywise option for this step.";
           }
-          const best = valid.some((p) => p.id === bestPickId) ? bestPickId : valid[0]?.id;
+          let best = valid.some((p) => p.id === bestPickId) ? bestPickId : valid[0]?.id;
+          const mild = safety().mildOnly;
+          if (mild && valid.length) {
+            // dry or sensitive skin: lead with the mildest option, whatever the AI preferred
+            const lowest = Math.min(...valid.map((p) => strengthOf(p)));
+            const pool = valid.filter((p) => strengthOf(p) === lowest);
+            best = pool.some((p) => p.id === best) ? best : pool[0].id;
+            reason = `The mildest matching option for your ${/sensitive/i.test(profile.skinType ?? "") ? "sensitive" : "dry"} skin. Start slowly and patch-test, since any active can still irritate.`;
+          }
           const cards = valid
             .map((p) => {
               const pick = picks.find((x) => x.productId === p.id);
               const chooseIf = p.id === best || /sever|persist|stubborn|serious|worse|worsen|chronic/i.test(pick?.chooseIf ?? "") ? undefined : pick?.chooseIf; // never judge severity: that is a doctor's call
-              return { ...cardFull(p), why: auto ? "" : (pick?.why ?? ""), chooseIf, isBest: p.id === best };
+              const sanitizeMild = (t?: string) => (mild && /gentl|strip|soothing|mild|safe|suit/i.test(t ?? "") ? undefined : t);
+              return { ...cardFull(p), why: auto || (mild && strengthOf(p) > 0) ? "" : (pick?.why ?? ""), chooseIf: sanitizeMild(chooseIf), isBest: p.id === best };
             })
             .sort((a, b) => Number(b.isBest) - Number(a.isBest));
           return { need, kind, cards, bestPickId: best, bestReason: reason, rejected: invalid };

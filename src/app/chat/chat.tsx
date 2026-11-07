@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ProductCard, Routine, Variant } from "@/lib/engine";
 import { CONCERN_LABELS } from "@/lib/concerns";
-import { PREGNANCY_LINE, mentionsPregnancy, allUserText } from "@/lib/safety-text";
+import { PREGNANCY_LINE, mentionsPregnancy, allUserText, dryOrSensitive } from "@/lib/safety-text";
 import CartLink from "@/components/cart-link";
 import { addToCart, useCart } from "@/lib/cart";
 import { CardContext, CompareTable, ProductCardView, RoutineChatCard, RoutineView } from "./parts";
@@ -55,7 +55,7 @@ function currentRoutine(messages: Msg[]): Routine | null {
 }
 
 /** Facts the customer has told us (saved by the AI each time they share something). */
-function currentProfile(messages: Msg[]): { concerns?: string[]; pregnantOrNursing?: boolean; sensitivities?: string } {
+function currentProfile(messages: Msg[]): { concerns?: string[]; pregnantOrNursing?: boolean; sensitivities?: string; skinType?: string } {
   let found = {};
   for (const m of messages)
     for (const p of m.parts as Part[])
@@ -157,6 +157,7 @@ export default function Chat() {
 
   const profile = useMemo(() => currentProfile(messages as Msg[]), [messages]);
   const pregnant = useMemo(() => mentionsPregnancy(allUserText(messages as Msg[])), [messages]);
+  const mildOnly = useMemo(() => dryOrSensitive(allUserText(messages as Msg[]), (profile as { skinType?: string }).skinType), [messages, profile]);
   const routineIds = useMemo(() => new Set((routine?.items ?? []).map((i) => i.id)), [routine]);
 
   // Cart (shared across chats, saved in this browser)
@@ -187,7 +188,7 @@ export default function Chat() {
   const changeRoutine = async (entries: { id: string; slots?: string[] }[], note: string, input: object) => {
     const before = routine?.items ?? [];
     try {
-      const res = await fetch("/api/routine", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entries, pregnant }) });
+      const res = await fetch("/api/routine", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entries, pregnant, mildOnly }) });
       if (!res.ok) throw new Error();
       const r = (await res.json()) as Routine;
       // keep the size/scent choices the customer already made
