@@ -12,7 +12,7 @@ import { z } from "zod";
 import { getModel } from "@/lib/model";
 import { concernLabels, getProduct, roleOf } from "@/lib/catalogue";
 import { systemPrompt, type Profile } from "@/lib/prompt";
-import { mentionsPregnancy, allUserText } from "@/lib/safety-text";
+import { mentionsPregnancy, allUserText, needsDoctor, recentUserText } from "@/lib/safety-text";
 import { isAllowed, type SafetyCtx } from "@/lib/safety";
 import { flowHint, questionState, applyAnswers, needsQuestionDue, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
 import {
@@ -85,6 +85,12 @@ export async function POST(req: Request) {
     alerts.push(
       `This customer is PREGNANT OR NURSING. The app already removes every product with retinol, salicylic acid, benzoyl peroxide, hydroquinone or chemical exfoliants (AHA, glycolic, lactic) from your tools, so only recommend what the tools return. If no safe product fits their concern (for example acne or pigmentation treatments need actives), say so plainly and do NOT show product cards for that concern. You may still offer pregnancy-friendly basics (mineral sunscreen, ceramide or peptide moisturiser, gentle non-active cleanser) when those are what they want. Never call any product "safe in pregnancy". The app adds the doctor line itself.`
     );
+  // Severe or medical problems get a doctor referral and NO products at all (the AI gets no tools).
+  const referral = needsDoctor(recentUserText(messages, 3));
+  if (referral)
+    alerts.push(
+      "This customer described something that needs a doctor, not a product: severe, painful, cystic or scarring acne, or eczema, psoriasis, bleeding, a spreading rash or infection. Respond with warm empathy, say clearly that this needs a dermatologist (or doctor) to assess and treat, and explain in a sentence that products alone are not the right first step. Do NOT recommend, name or link any product, and do not offer to build a routine or ask more questions. Keep it to 3 or 4 short sentences. You may say they are welcome to come back for gentle everyday basics after seeing a doctor."
+    );
   const alertText = alerts.join("\n");
 
   const result = streamText({
@@ -95,6 +101,7 @@ export async function POST(req: Request) {
     // The small free model sometimes searches and then just chats instead of showing products.
     // Once it has searched, it must finish with a real answer tool (ask / recommend / routine / compare).
     prepareStep: ({ steps, stepNumber }) => {
+      if (referral) return { toolChoice: "none" as const }; // hard gate: no tools, so no product cards and no Buy links
       // Until we know "individual picks or a routine", the AI may not show products yet: it must ask.
       const blocked = !profile.mode && !profile.decideForMe && questionState(messages).asked < MAX_QUESTIONS;
       const ALL = ["update_profile", "search_products", "get_product_details", "compare_products", "recommend_products", "build_routine", "update_routine", "ask_needs", "ask_question"];

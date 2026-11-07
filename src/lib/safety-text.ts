@@ -23,7 +23,7 @@ export function mentionsPregnancy(text: string): boolean {
 export function needsDoctor(text: string): boolean {
   const t = text.toLowerCase();
   const acne = /(acne|pimple|zit|breakout|break-out|cyst|nodul)/.test(t);
-  const severity = /(severe|painful|cystic|nodul|scarring|leaving (permanent )?scars|permanent scar|deep|inflamed and sore|bleeding)/.test(t);
+  const severity = /(severe|painful|cystic|nodul|scarring|leaving (permanent )?scars|permanent scar|inflamed and sore|bleeding)/.test(t);
   if (acne && severity) return true;
   if (/(cystic|nodular)/.test(t)) return true;
   if (/(eczema|psoriasis|dermatitis)/.test(t)) return true;
