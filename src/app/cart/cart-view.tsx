@@ -71,13 +71,15 @@ export default function CartView() {
 
   return (
     <div className="min-h-dvh bg-mist">
-      <header className="flex items-center justify-between border-b border-sky-2/60 bg-white/80 px-4 py-3 backdrop-blur sm:px-6">
-        <Link href="/" className="font-serif text-lg text-navy">
+      <header className="border-b border-sky-2/60 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 sm:px-6">
+        <Link href="/" className="shrink-0 whitespace-nowrap font-serif text-lg text-navy">
           Bodywise <span className="text-blue">Guide</span>
         </Link>
         <div className="flex gap-2">
-          <Link href="/" className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">Home</Link>
-          <Link href="/chat" className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">Chat</Link>
+          <Link href="/" className="whitespace-nowrap rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">Home</Link>
+          <Link href="/chat" className="whitespace-nowrap rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">Chat</Link>
+        </div>
         </div>
       </header>
 

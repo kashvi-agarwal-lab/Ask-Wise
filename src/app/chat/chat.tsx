@@ -247,22 +247,33 @@ export default function Chat() {
     <CardContext.Provider value={{ onVariant, onAdd, onCart, routineIds, cartIds, profileConcerns: profile.concerns ?? [] }}>
     <div className="flex h-dvh bg-mist">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-sky-2/60 bg-white/80 px-4 py-3 backdrop-blur sm:px-6">
-          <Link href="/" className="font-serif text-lg text-navy">
-            Bodywise <span className="text-blue">Guide</span>
+        <header className="border-b border-sky-2/60 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 sm:px-6">
+          <Link href="/" className="shrink-0 whitespace-nowrap font-serif text-lg text-navy">
+            Bodywise <span className="hidden text-blue min-[340px]:inline">Guide</span>
           </Link>
           <div className="flex items-center gap-2">
-            <Link href="/" className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">
-              Home
+            <Link
+              href="/"
+              aria-label="Home"
+              className="inline-flex min-h-[34px] items-center justify-center whitespace-nowrap rounded-full border border-navy/20 px-2.5 py-1.5 text-sm text-navy transition hover:bg-sky sm:px-3"
+            >
+              <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] sm:hidden" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 11l9-7.5 9 7.5" />
+                <path d="M5.5 9.5V20h13V9.5" />
+              </svg>
+              <span className="hidden sm:inline">Home</span>
             </Link>
-            <CartLink />
+            <CartLink compact className="px-2.5 text-sm sm:px-3" />
             {messages.length > 0 && (
-              <button onClick={newChat} className="rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">
-                New chat
+              <button onClick={newChat} className="whitespace-nowrap rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">
+                <span className="sm:hidden">New</span>
+                <span className="hidden sm:inline">New chat</span>
               </button>
             )}
           </div>
-        </header>
+          </div>
+      </header>
 
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6 sm:px-6">

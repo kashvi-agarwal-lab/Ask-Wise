@@ -94,17 +94,18 @@ export default function Home() {
   return (
     <main className="flex-1">
       {/* Top bar */}
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
-        <span className="font-serif text-xl tracking-tight text-navy">
+      <header className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-5 sm:px-8">
+        <span className="shrink-0 whitespace-nowrap font-serif text-lg tracking-tight text-navy sm:text-xl">
           Bodywise <span className="text-blue">Guide</span>
         </span>
-        <div className="flex items-center gap-2">
-          <CartLink className="px-4 py-2" />
+        <div className="flex items-center gap-3">
+          <CartLink className="px-3 text-sm sm:px-4 sm:py-2" />
           <Link
             href={CTA}
-            className="rounded-full border border-navy/20 px-4 py-2 text-sm text-navy transition hover:bg-sky-2"
+            className="whitespace-nowrap rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky-2 sm:px-4 sm:py-2"
           >
-            Find my routine
+            <span className="hidden min-[400px]:inline">Find my routine</span>
+            <span className="min-[400px]:hidden">Start chat</span>
           </Link>
         </div>
       </header>
