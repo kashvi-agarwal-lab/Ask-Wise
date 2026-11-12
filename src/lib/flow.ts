@@ -4,7 +4,7 @@ import type { UIMessage } from "ai";
 import type { Profile } from "./prompt";
 import type { Role } from "./catalogue";
 import { applyScriptedAnswer, areasFromText, concernKeysFromText, modeFromText, skinTypeFromText, starterMode } from "./script";
-import { allUserText, ageBandFromText, mentionsAllergy } from "./safety-text";
+import { allUserText, ageBandFromText, mentionsAllergy, mentionsPregnancy, needsDoctor } from "./safety-text";
 import { allergensFromText } from "./safety";
 
 export const MAX_QUESTIONS = 9; // a ceiling (includes the safety check-in); the usual depth is 3 to 4 questions
@@ -104,7 +104,7 @@ const textOf = (m?: UIMessage) =>
  */
 export function applyAnswers(profile: Profile, messages: UIMessage[]): Profile {
   // "You decide for me" counts only when the customer really said it, so ignore the AI's own value.
-  const next: Profile = { ...profile, decideForMe: undefined, answered: [], unsure: [], askedIds: [] };
+  const next: Profile = { ...profile, decideForMe: undefined, answered: [], unsure: [], askedIds: [], clarify: undefined };
 
   // 1. Things the customer already said, in their own words
   const typed = allUserText(messages);
@@ -133,7 +133,14 @@ export function applyAnswers(profile: Profile, messages: UIMessage[]): Profile {
     const parts = messages[i - 1].parts as { type: string; output?: { question?: string; id?: string } }[];
     const scripted = parts.find((p) => p.type === "tool-ask_scripted");
     if (scripted?.output?.id) {
-      applyScriptedAnswer(next, scripted.output.id, reply, needsOptions);
+      const ok = applyScriptedAnswer(next, scripted.output.id, reply, needsOptions);
+      // A reply that doesn't answer the question is never stored. If it is the latest message,
+      // the app asks again: kindly, or (when they told us something new) after acknowledging it.
+      if (!ok && i === messages.length - 1) {
+        const interrupted =
+          concernKeysFromText(reply).length > 0 || mentionsPregnancy(reply) || mentionsAllergy(reply) || !!ageBandFromText(reply) || needsDoctor(reply);
+        next.clarify = { id: scripted.output.id, interrupted };
+      }
       continue;
     }
     if (parts.some((p) => p.type === "tool-ask_needs")) {

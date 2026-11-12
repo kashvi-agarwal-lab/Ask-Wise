@@ -23,6 +23,7 @@ export type Profile = {
   allergyStatus?: "none" | "yes" | "undisclosed";
   allergens?: string[]; // canonical names (see ALLERGENS in safety.ts)
   allergyText?: string; // what the customer said caused the reaction (their own words)
+  clarify?: { id: string; interrupted: boolean }; // the last reply didn't answer this question
 };
 
 export function systemPrompt(profile: Profile, hasRoutine: boolean, flow = "", alerts = "") {

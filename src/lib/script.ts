@@ -19,7 +19,7 @@ export function concernKeysFromText(text: string): string[] {
   const rules: [RegExp, string][] = [
     [/(face|facial).{0,12}(acne|pimple|breakout)|(acne|pimples?|breakouts?).{0,15}(face|forehead|cheek|chin|nose)|forehead pimples/, "face-acne"],
     [/(back|body|chest|shoulder).{0,12}(acne|pimple|breakout)|(acne|pimples?|bacne).{0,15}(back|body|chest|shoulders)|\bbacne\b/, "body-acne"],
-    [/hair ?(fall|loss)|losing (more |a lot of )?hair|hair (is )?thinning|thinning hair|balding|receding/, "hair-fall"],
+    [/hair ?(fall|loss)|losing (more |a lot of )?hair|hair (is )?(thinning|falling|shedding)|thinning hair|balding|receding|shedding (a lot of )?hair/, "hair-fall"],
     [/dandruff|itchy scalp|flaky scalp/, "dandruff"],
     [/dry (and )?(flaky |rough )?skin|skin (feels |is )?dry/, "dry-skin"],
     [/\btan\b|tanning|suntan/, "tan"],
@@ -137,6 +137,18 @@ const informative = (p: Profile) => (p.answered ?? []).filter((id) => ["area", "
 
 /** Which of the app's questions comes next (null = nothing more to ask, time to recommend). */
 export function nextScripted(profile: Profile, messages: UIMessage[], needsOptions: string[]): Scripted | null {
+  const q = nextScriptedRaw(profile, messages, needsOptions);
+  const c = profile.clarify;
+  if (q && c && c.id === q.id)
+    return {
+      ...q,
+      question: c.interrupted ? `Thanks for telling me. To keep going: ${lowerFirst(q.question)}` : `Sorry, I didn't quite catch that. ${q.question}`,
+    };
+  return q;
+}
+const lowerFirst = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+
+function nextScriptedRaw(profile: Profile, messages: UIMessage[], needsOptions: string[]): Scripted | null {
   const unsure = new Set(profile.unsure ?? []);
   const asked = new Set(profile.askedIds ?? []);
   const q = (id: string): Scripted => ({ id, ...QUESTIONS[id] });
@@ -174,8 +186,113 @@ export function starterMode(profile: Profile, messages: UIMessage[]): boolean {
 
 /* ---------- Reading answers ---------- */
 
-export function applyScriptedAnswer(next: Profile, id: string, reply: string, needsOptions: (p: Profile) => string[]): void {
-  const r = reply.trim();
+/* ---------- Checking a typed answer against the question that was asked ---------- */
+
+const UNSURE = /\b(not sure|unsure|no idea|don'?t know|dont know|idk|pata nahi|nahi pata|maybe)\b/i;
+const pick = (t: string, table: [RegExp, string][]) => table.find(([re]) => re.test(t))?.[1] ?? null;
+
+/**
+ * The canonical answer (one of the question's options) for what the customer typed or tapped,
+ * or null when it does not answer THIS question (the app then asks again, kindly, instead of
+ * storing something wrong).
+ */
+export function normalizeAnswer(id: string, reply: string, needsOptions: string[] = []): string | null {
+  const t = reply.trim().toLowerCase();
+  if (!t) return null;
+  const opts = [...(QUESTIONS[id]?.options ?? []), ...needsOptions];
+  const exact = opts.find((o) => o.toLowerCase() === t);
+  if (exact) return exact;
+  switch (id) {
+    case "area": {
+      const face = /\b(face|facial|forehead|cheeks?|chin|nose|jaw)\b/.test(t);
+      const body = /\b(body|back|chest|shoulders?|arms?|legs?|butt|bum|neck)\b|bacne/.test(t);
+      if (/\bboth\b/.test(t) || (face && body)) return "Both face and body";
+      return body ? "Body (back, chest, shoulders)" : face ? "Face" : null;
+    }
+    case "hair_pattern":
+      if (UNSURE.test(t)) return "Not sure";
+      return pick(t, [
+        [/hairline|parting|part line|front|temple|widow|forehead|crown|top of/, "Hairline or parting"],
+        [/clump|comb|brush|wash|shower|pillow|bunch|handful|drain|strands? fall/, "Clumps when washing or combing"],
+        [/all over|everywhere|overall|whole|entire|general|thin(ning)? (all|every)|diffuse/, "All over my head"],
+      ]);
+    case "skin_type":
+      if (UNSURE.test(t)) return "Not sure";
+      return pick(t, [
+        [/sensitive|reactive|irritat|easily red/, "Sensitive"],
+        [/combination|combo|mixed|t-?zone/, "Combination"],
+        [/oily|greasy|shiny/, "Oily"],
+        [/\bdry\b|flaky|tight/, "Dry"],
+        [/\bnormal\b|balanced/, "Normal"],
+      ]);
+    case "skin_feel":
+      if (UNSURE.test(t)) return "Not sure";
+      return pick(t, [
+        [/only on|t-?zone|forehead|nose/, "Oily only on forehead and nose"],
+        [/tight|flaky|\bdry\b|stretch/, "Tight or flaky"],
+        [/shiny|oily|greasy/, "Shiny or oily all over"],
+        [/comfortable|fine|normal|neither|\bok(ay)?\b|balanced/, "Comfortable, neither"],
+      ]);
+    case "duration": {
+      if (UNSURE.test(t)) return "Not sure";
+      const m = t.match(/(\d+(?:\.\d+)?)\s*(day|week|month|year|saal|mahin)/);
+      if (m) {
+        const n = parseFloat(m[1]);
+        const months = /day/.test(m[2]) ? n / 30 : /week/.test(m[2]) ? n / 4.3 : /year|saal/.test(m[2]) ? n * 12 : n;
+        return months < 1 ? "Less than a month" : months <= 6 ? "1 to 6 months" : "More than 6 months";
+      }
+      return pick(t, [
+        [/less than a month|few (days|weeks)|a week|couple of weeks|recent|just started|new\b/, "Less than a month"],
+        [/more than 6|over (6|six)|years?|long time|ages|always|forever|since (i was|childhood|school|my teens)/, "More than 6 months"],
+        [/1 ?(to|-) ?6|few months|couple of months|some months|months/, "1 to 6 months"],
+      ]);
+    }
+    case "history":
+      if (UNSURE.test(t)) return "Not sure";
+      return pick(t, [
+        [/strong|acid|retin|tretinoin|adapalene|benzoyl|salicylic|glycolic|\baha\b|\bbha\b|prescri/, "Yes, strong actives (acids, retinol, benzoyl peroxide)"],
+        [/^(no|nope|never|none|nothing)\b|first time|haven'?t|not yet/, "No, this is my first time"],
+        [/mild|everyday|basic|regular|face ?wash|moisturi|cream|lotion|soap/, "Yes, mild everyday products"],
+      ]);
+    case "mode":
+      return pick(t, [
+        [/routine|full|complete|everything|whole|\bboth\b|am.?pm|morning/, "Complete routine"],
+        [/individual|picks?\b|products?\b|just|single|one\b|few/, "Individual picks"],
+      ]);
+    case "needs": {
+      if (/decide|you choose|everything|\ball\b|anything/.test(t)) return "You decide for me";
+      const table: [RegExp, string][] = [
+        [/treat|serum|acne|spot|roll-?on|growth/, "Treatment"],
+        [/clean|wash|shampoo|soap/, "Cleansing"],
+        [/condition/, "Conditioning"],
+        [/moistur|lotion|cream|hydrat/, "Moisturising"],
+        [/sun|spf/, "Sun protection"],
+        [/underarm|deo|odou?r|roll/, "Underarm care"],
+      ];
+      const got = [...new Set(t.split(/,|\band\b|&|\+/).map((x) => pick(x.trim(), table)).filter((x): x is string => !!x))].filter(
+        (x) => !needsOptions.length || needsOptions.includes(x)
+      );
+      return got.length ? got.join(", ") : null;
+    }
+    case "safety": {
+      const hits =
+        /under ?18|minor|teen|pregnan|breastfe|nursing|conceive|allerg|react|none|no\b|nope|nothing|n\/a|not applicable|prefer not|rather not|skip|private/.test(t) ||
+        !!ageBandFromText(t) ||
+        mentionsPregnancy(t);
+      return hits ? reply.trim() : null;
+    }
+    case "allergen":
+      return reply.trim(); // their own words: unrecognised = "unknown", which makes the app abstain
+    default:
+      return reply.trim();
+  }
+}
+
+/** Applies one answer. Returns false (and stores nothing) when the reply does not answer this question. */
+export function applyScriptedAnswer(next: Profile, id: string, reply: string, needsOptions: (p: Profile) => string[]): boolean {
+  const canon = normalizeAnswer(id, reply, id === "needs" ? needsOptions(next) : []);
+  if (canon === null) return false;
+  const r = canon;
   const notSure = /not sure/i.test(r);
   next.askedIds = [...new Set([...(next.askedIds ?? []), id])];
   const done = () => {
@@ -268,4 +385,5 @@ export function applyScriptedAnswer(next: Profile, id: string, reply: string, ne
       done();
       break;
   }
+  return true;
 }
