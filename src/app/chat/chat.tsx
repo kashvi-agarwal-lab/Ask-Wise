@@ -307,6 +307,8 @@ export default function Chat() {
         (p.type.startsWith("tool-") && (p.state === "output-available" ? !["update_profile", "search_products", "get_product_details"].includes(p.type.slice(5)) : !!WORKING[p.type.slice(5)]))
     );
   const showThinking = busy && !lastVisible;
+  // A reply that stopped part-way (time limit) leaves a tool without a result: treat it like an error.
+  const stalled = status === "ready" && last?.role === "assistant" && lastParts.some((p) => p.type.startsWith("tool-") && (p.state === "input-available" || p.state === "input-streaming"));
   const ask =
     status === "ready" && last?.role === "assistant"
       ? (lastParts.find((p) => (p.type === "tool-ask_question" || p.type === "tool-ask_needs" || p.type === "tool-ask_scripted") && p.state === "output-available")
@@ -384,7 +386,7 @@ export default function Chat() {
                 streaming={busy && m.id === last?.id}
                 locked={m.role === "assistant" ? lockedNote(sigAt(messages as Msg[], i), nowSig, busy) : undefined}
                 routineOld={m.role === "assistant" && routineAt >= 0 && i !== routineAt ? "An earlier version. Your current routine is further down." : undefined}
-                failed={!!error && !busy && m.id === last?.id && m.role === "assistant"}
+                failed={(!!error || stalled) && !busy && m.id === last?.id && m.role === "assistant"}
                 minor={nowSig.minor}
                 pregnant={pregnant}
                 tan={wantsTan(topicText)}
@@ -397,6 +399,7 @@ export default function Chat() {
             {showThinking && <Typing label="Thinking…" />}
 
             {error && !busy && <RetryBox message={error.message} onRetry={() => regenerate()} />}
+            {!error && stalled && <RetryBox message="That took too long on my side. Tap Retry and I'll pick up where we were." onRetry={() => regenerate()} />}
 
             {ask && !busy && <QuickReplies key={last.id} options={ask.options} multi={!!ask.multiSelect} onSend={send} />}
             {cartFlags.length > 0 && !busy && (

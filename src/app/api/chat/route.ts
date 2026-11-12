@@ -70,7 +70,7 @@ function reactedProductFamilies(said: string): string[] {
 
 /** Sort an AI error into a kind we can explain (never log or show the raw provider payload). */
 function errorKind(text: string): "throttled" | "timeout" | "invalid" | "other" {
-  if (/quota|rate.?limit|429|RESOURCE_EXHAUSTED|too many requests|overloaded|503|UNAVAILABLE/i.test(text)) return "throttled";
+  if (/quota|rate.?limit|429|RESOURCE_EXHAUSTED|too many requests|overloaded|high demand|try again later|503|UNAVAILABLE/i.test(text)) return "throttled";
   if (/timeout|timed out|aborted|deadline/i.test(text)) return "timeout";
   if (/invalid|schema|parse|validation|400/i.test(text)) return "invalid";
   return "other";
@@ -190,10 +190,12 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: getModel(),
-    // Bounded retries with exponential backoff (built into the SDK), and time limits so a stuck call
-    // ends with a clear message instead of hanging until the platform kills it.
+    // Bounded retries with exponential backoff (built into the SDK), and an overall time limit just
+    // under the platform's 60 s, so a stuck call ends cleanly (the browser then offers Retry).
+    // No per-step limit: the free model can take 20-30 s on the step that picks products.
     maxRetries: 2,
-    timeout: { totalMs: 55_000, stepMs: 25_000 },
+    timeout: { totalMs: 57_000 },
+    onAbort: () => console.error(`[chat ${requestId}] timeout: reply stopped at the time limit`),
     instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked, messages), finalAlerts),
     messages: await convertToModelMessages(messages),
     stopWhen: [isStepCount(14), hasToolCall("ask_question"), hasToolCall("ask_needs"), hasToolCall("ask_scripted")], // a question always ends the turn so the customer can answer
@@ -397,7 +399,7 @@ export async function POST(req: Request) {
               kind === "treatment" && concernKeys.length
                 ? searchProducts({ role: "cleanser", concernKeys, category: area === "face" ? "face" : area === "scalp" ? "hair" : area === "body" ? "body" : undefined, limit: 3 }, safety()).results
                 : [];
-            missing = `The Be Bodywise range doesn't have a separate ${what}${label ? ` for ${label}` : ""} that fits what you've told me.${
+            missing = `The Be Bodywise range doesn't have ${kind === "treatment" ? "a separate " : "a "}${what}${label ? ` for ${label}` : ""} that fits what you've told me.${
               washes.length ? " The washes made for it are the treatment step here." : ""
             }`;
           }
