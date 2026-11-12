@@ -712,8 +712,8 @@ function Message({
       {hasResults && !streaming && (
         <p className="px-1 text-xs leading-relaxed text-slate">Topical products work best alongside a healthy diet and lifestyle.</p>
       )}
-      {pregnant && hasResults && !streaming && <Bubble>{PREGNANCY_LINE}</Bubble>}
-      {minor && hasResults && !streaming && <Bubble>{MINOR_LINE}</Bubble>}
+      {pregnant && hasResults && !streaming && !locked && <Bubble>{PREGNANCY_LINE}</Bubble>}
+      {minor && hasResults && !streaming && !locked && <Bubble>{MINOR_LINE}</Bubble>}
     </div>
     </CardContext.Provider>
   );
