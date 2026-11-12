@@ -12,6 +12,18 @@ export type Scripted = { id: string; question: string; options: string[]; multiS
 
 /* ---------- Reading what the customer already said ---------- */
 
+/** "no dandruff", "not dandruff", "without flakes", "rusi nahi"... */
+export function deniesDandruff(text: string): boolean {
+  const t = text.toLowerCase();
+  return /\b(no|not|without|never|don'?t have( any)?|isn'?t)\s+(any\s+)?(dandruff|flakes|flaking|rusi)\b|\b(dandruff|rusi)\s+(nahi|nahin|nhi)\b|no flakes, just itchy/.test(t);
+}
+
+/** An itchy scalp (in English or Hinglish). Itch alone is not treated as dandruff. */
+export function scalpItchFromText(text: string): boolean {
+  const t = text.toLowerCase();
+  return /(itch|khujli|khujali|kharish)/.test(t) && /(scalp|head|hair|baal|sir|sar)/.test(t);
+}
+
 /** The customer writes in Hindi or Hinglish (Roman script or Devanagari). */
 export function writesHinglish(text: string): boolean {
   if (/[\u0900-\u097F]/.test(text)) return true;
@@ -29,7 +41,7 @@ export function concernKeysFromText(text: string): string[] {
     [/(face|facial).{0,12}(acne|pimple|breakout)|(acne|pimples?|breakouts?).{0,15}(face|forehead|cheek|chin|nose)|forehead pimples/, "face-acne"],
     [/(back|body|chest|shoulder).{0,12}(acne|pimple|breakout)|(acne|pimples?|bacne).{0,15}(back|body|chest|shoulders)|\bbacne\b/, "body-acne"],
     [/hair ?(fall|loss)|losing (more |a lot of )?hair|hair (is )?(thinning|falling|shedding)|thinning hair|balding|receding|shedding (a lot of )?hair/, "hair-fall"],
-    [/dandruff|itchy scalp|flaky scalp/, "dandruff"],
+    [/dandruff|flaky scalp|scalp flakes|white flakes/, "dandruff"], // (an itchy scalp alone is NOT dandruff: see scalpItchFromText)
     [/dry (and )?(flaky |rough )?skin|skin (feels |is )?dry/, "dry-skin"],
     [/\btan\b|tanning|suntan/, "tan"],
     [/pigmentation|dark (patches|spots)|dark marks/, "pigmentation"],
@@ -57,6 +69,7 @@ export function concernKeysFromText(text: string): string[] {
   ];
   for (const [re, k] of hinglish) if (re.test(t)) keys.add(k);
   if (/\b(daane|dane|muhase|muhanse)\b/.test(t) && !keys.has("face-acne") && !keys.has("body-acne")) keys.add("acne");
+  if (deniesDandruff(t)) keys.delete("dandruff");
   if (/\bacne\b|\bpimples?\b|breakouts?/.test(t) && !keys.has("face-acne") && !keys.has("body-acne")) keys.add("acne"); // acne, area unknown
   return [...keys];
 }
@@ -123,6 +136,10 @@ export const QUESTIONS: Record<string, Omit<Scripted, "id">> = {
     options: ["No, this is my first time", "Yes, mild everyday products", "Yes, strong actives (acids, retinol, benzoyl peroxide)", "Not sure"],
   },
   mode: { question: "Would you like individual product picks, or a complete routine?", options: ["Individual picks", "Complete routine"] },
+  flakes: {
+    question: "Do you also see white flakes on your scalp or shoulders?",
+    options: ["Yes, white flakes", "No flakes, just itchy", "Not sure"],
+  },
   allergen: {
     question: "Which ingredient or product caused the reaction? Type it if it isn't listed.",
     options: ["Fragrance", "Salicylic acid", "Essential oils", "Not sure which one"],
@@ -155,7 +172,7 @@ export function safetyQuestion(profile: Profile, text: string): Scripted | null 
 const HAIR_KEYS = ["hair-fall", "dandruff", "frizz-damage", "dry-hair", "brows-lashes"];
 const WELLNESS_KEYS = ["sleep", "muscle-soreness", "energy-immunity", "bone-health"];
 const has = (p: Profile, k: string) => (p.concerns ?? []).includes(k);
-const isHairProfile = (p: Profile) => (p.concerns ?? []).some((k) => HAIR_KEYS.includes(k));
+const isHairProfile = (p: Profile) => (p.concerns ?? []).some((k) => HAIR_KEYS.includes(k)) || !!p.scalpItch;
 const isWellness = (p: Profile) => (p.concerns ?? []).length > 0 && (p.concerns ?? []).every((k) => WELLNESS_KEYS.includes(k));
 const isSkin = (p: Profile) => !isHairProfile(p) && !isWellness(p);
 const informative = (p: Profile) => (p.answered ?? []).filter((id) => ["area", "hair_pattern", "skin_type", "skin_feel", "duration", "history"].includes(id)).length;
@@ -185,6 +202,8 @@ function nextScriptedRaw(profile: Profile, messages: UIMessage[], needsOptions: 
   const acneUnknown = has(profile, "acne") && !has(profile, "face-acne") && !has(profile, "body-acne");
   if (acneUnknown && !asked.has("area")) return q("area");
   if (has(profile, "hair-fall") && !profile.hairPattern && !asked.has("hair_pattern")) return q("hair_pattern");
+  // An itchy scalp is not confirmed dandruff: ask about flakes instead of assuming.
+  if (profile.scalpItch && !has(profile, "dandruff") && !profile.noDandruff && !asked.has("flakes")) return q("flakes");
   if (isSkin(profile) && !isWellness(profile) && !profile.skinType && !asked.has("skin_type")) return q("skin_type");
   if (isSkin(profile) && unsure.has("skin_type") && !profile.skinType && !asked.has("skin_feel")) return q("skin_feel");
   // "A recommendation must be earned": at least two real answers, unless the first message was rich.
@@ -281,6 +300,11 @@ export function normalizeAnswer(id: string, reply: string, needsOptions: string[
         [/^(no|nope|never|none|nothing)\b|first time|haven'?t|not yet/, "No, this is my first time"],
         [/mild|everyday|basic|regular|face ?wash|moisturi|cream|lotion|soap/, "Yes, mild everyday products"],
       ]);
+    case "flakes":
+      if (UNSURE.test(t)) return "Not sure";
+      if (deniesDandruff(t) || /^(no|nope|nahi|nahin)\b|just itch/.test(t)) return "No flakes, just itchy";
+      if (/^(yes|yeah|haan|ha)\b|flake|dandruff|rusi|white/.test(t)) return "Yes, white flakes";
+      return null;
     case "mode":
       return pick(t, [
         [/routine|full|complete|everything|whole|\bboth\b|am.?pm|morning/, "Complete routine"],
@@ -399,6 +423,14 @@ export function applyScriptedAnswer(next: Profile, id: string, reply: string, ne
       done();
       break;
     }
+    case "flakes":
+      if (/^yes/i.test(r)) next.concerns = [...new Set([...(next.concerns ?? []), "dandruff"])];
+      else {
+        next.noDandruff = true; // "no" or "not sure": never assume dandruff
+        if (notSure) unsure();
+      }
+      if (!notSure) done();
+      break;
     case "allergen":
       next.allergyText = r;
       if (!notSure && !/not sure/i.test(r)) next.allergens = [...new Set([...(next.allergens ?? []), ...allergensFromText(r)])];

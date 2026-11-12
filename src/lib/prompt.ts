@@ -24,6 +24,8 @@ export type Profile = {
   allergens?: string[]; // canonical names (see ALLERGENS in safety.ts)
   allergyText?: string; // what the customer said caused the reaction (their own words)
   clarify?: { id: string; interrupted: boolean }; // the last reply didn't answer this question
+  scalpItch?: boolean; // itchy scalp (not by itself dandruff)
+  noDandruff?: boolean; // said there is no dandruff / no flakes (or wasn't sure): no medicated anti-dandruff products
 };
 
 export function systemPrompt(profile: Profile, hasRoutine: boolean, flow = "", alerts = "") {

@@ -88,6 +88,7 @@ export async function POST(req: Request) {
     allergens: profile.allergens ?? [],
     allergyUnknown,
     excludeFamilies: reactedFamilies,
+    avoidMedicated: !(profile.concerns ?? []).includes("dandruff") && (!!profile.scalpItch || !!profile.noDandruff || (profile.concerns ?? []).some((k) => ["hair-fall", "dry-hair", "frizz-damage"].includes(k))),
   });
   let routine: Routine | null = lastToolOutput<Routine>(messages, "build_routine");
   const lastUpdate = lastToolOutput<Routine>(messages, "update_routine");
@@ -367,7 +368,7 @@ export async function POST(req: Request) {
           products: z.array(z.object({ productId: z.string() })).min(1).max(8),
         }),
         execute: async ({ products }) => {
-          const r = buildRoutine(products.map((p) => ({ id: p.productId })), safety(), { companions: true });
+          const r = buildRoutine(products.map((p) => ({ id: p.productId })), safety(), { companions: true, concerns: profile.concerns ?? [] });
           routine = r;
           return r;
         },

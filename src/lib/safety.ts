@@ -23,7 +23,11 @@ export type SafetyCtx = {
   allergens?: string[]; // canonical allergen names (keys of ALLERGENS)
   allergyUnknown?: boolean; // an allergy was mentioned but we cannot tell which ingredient
   excludeFamilies?: string[]; // products the customer reacted to
+  avoidMedicated?: boolean; // hair concern without confirmed dandruff: no medicated anti-dandruff products
 };
+
+/** Medicated anti-dandruff products (ketoconazole, zinc pyrithione). */
+export const isMedicated = (p: Pick<Product, "actives" | "name">) => p.actives.some((a) => ["ketoconazole", "zpto"].includes(a.key)) || /ketoconazole|zpto|pyrithione/i.test(p.name);
 
 /** Listed actives the app will not suggest automatically during pregnancy or breastfeeding. */
 const REVIEW_ACTIVES = new Set(["salicylic-acid", "benzoyl-peroxide", "glycolic-acid", "lactic-acid", "aha", "ketoconazole", "zpto", "redensyl"]);
@@ -155,6 +159,7 @@ export function exclusionReason(p: Product, ctx?: SafetyCtx): string | null {
     if (r) return r;
   }
   if (ctx.mildOnly && isStrongActive(p)) return "it's a strong active, and your skin is dry or sensitive";
+  if (ctx.avoidMedicated && isMedicated(p)) return "it's a medicated anti-dandruff product, and you haven't said you have dandruff";
   return null;
 }
 

@@ -1,6 +1,6 @@
 // The "app code" role: filters the catalogue, validates product IDs and does the maths.
 // The AI never invents products or prices; it can only use what these functions return.
-import { isAllowed, strengthOf, type SafetyCtx } from "./safety";
+import { isAllowed, isMedicated, strengthOf, type SafetyCtx } from "./safety";
 import { scheduleFor, needsWashFirst, type Slot } from "./schedule";
 import { visibleProducts, getProduct, concernLabels, pricesAsOf, roleOf, variantsOf, type Product, type Role, type Variant } from "./catalogue";
 
@@ -222,13 +222,15 @@ function pickCompanion(kind: "shampoo" | "conditioner", concernKeys: string[], t
   return visibleProducts
     .filter((p) => p.category === "hair" && !p.isKit && !p.isSupplement && (kind === "shampoo" ? p.type === "shampoo" : roleOf(p) === "conditioner"))
     .filter((p) => !taken.has(p.family) && isAllowed(p, ctx))
+    // Never add a medicated (anti-dandruff) shampoo just to complete a routine: only when dandruff is the concern.
+    .filter((p) => !isMedicated(p) || concernKeys.includes("dandruff"))
     .sort((a, b) => fitScore(b, concernKeys) - fitScore(a, concernKeys) || popularity(b) - popularity(a))[0];
 }
 
 export function buildRoutine(
   entries: { id: string; slots?: Slot[] }[],
   ctx?: SafetyCtx,
-  opts?: { companions?: boolean }
+  opts?: { companions?: boolean; concerns?: string[] }
 ): Routine & { rejected: string[] } {
   const { invalid } = validate(entries.map((e) => e.id));
   const items: RoutineItem[] = [];
@@ -264,7 +266,7 @@ export function buildRoutine(
     const wantsConditioner = needs.some((n) => n.conditioner);
     const hasShampoo = prods.some((p) => p.type === "shampoo");
     const hasConditioner = prods.some((p) => roleOf(p) === "conditioner");
-    const concernKeys = prods.flatMap((p) => p.concerns.filter((c) => c.strength === "primary").map((c) => c.key));
+    const concernKeys = [...prods.flatMap((p) => p.concerns.filter((c) => c.strength === "primary").map((c) => c.key)), ...(opts.concerns ?? [])];
     const firstHair = items.findIndex((i) => i.category === "hair");
     const added: string[] = [];
     if (wantsShampoo && !hasShampoo) {
@@ -272,9 +274,8 @@ export function buildRoutine(
       if (s) {
         add(s, true, firstHair);
         added.push("shampoo");
-        if (/dandruff|ketoconazole|zpto/i.test(s.name + " " + s.type + " " + s.displayName))
-          notes.push("The Bodywise shampoos are anti-dandruff formulas, so this is the closest shampoo in the range. Use it gently, only 2–3 times a week.");
-      }
+      } else
+        notes.push("Wash your hair with your usual gentle shampoo first. The Bodywise shampoos are medicated anti-dandruff formulas, so one isn't added unless dandruff is your concern.");
     }
     if ((wantsConditioner || wantsShampoo) && !hasConditioner) {
       const c = pickCompanion("conditioner", concernKeys, families, ctx);

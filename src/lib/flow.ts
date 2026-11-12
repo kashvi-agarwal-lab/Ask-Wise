@@ -3,7 +3,7 @@
 import type { UIMessage } from "ai";
 import type { Profile } from "./prompt";
 import type { Role } from "./catalogue";
-import { applyScriptedAnswer, areasFromText, concernKeysFromText, modeFromText, skinTypeFromText, starterMode } from "./script";
+import { applyScriptedAnswer, areasFromText, concernKeysFromText, deniesDandruff, modeFromText, scalpItchFromText, skinTypeFromText, starterMode } from "./script";
 import { allUserText, ageBandFromText, mentionsAllergy, mentionsPregnancy, needsDoctor } from "./safety-text";
 import { allergensFromText } from "./safety";
 
@@ -13,7 +13,7 @@ const RESULT_TOOLS = ["tool-recommend_products", "tool-build_routine", "tool-upd
 
 const HAIR = ["hair-fall", "dandruff", "frizz-damage", "dry-hair", "brows-lashes"];
 const concernText = (profile: Profile) => (profile.concerns ?? []).join(" ").toLowerCase();
-const isHair = (profile: Profile) => HAIR.some((k) => concernText(profile).includes(k)) || /hair|scalp|dandruff/.test(concernText(profile));
+const isHair = (profile: Profile) => HAIR.some((k) => concernText(profile).includes(k)) || /hair|scalp|dandruff/.test(concernText(profile)) || !!profile.scalpItch;
 const isUnderarm = (profile: Profile) => /underarm|odour|odor|sweat/.test(concernText(profile));
 
 /** The fixed "which kinds" choices, decided by the app from the customer's concern. */
@@ -115,6 +115,11 @@ export function applyAnswers(profile: Profile, messages: UIMessage[]): Profile {
   if (areas.length) next.bodyAreas = [...new Set([...(next.bodyAreas ?? []), ...areas])];
   if (!next.skinType) next.skinType = skinTypeFromText(typed);
   if (!next.mode) next.mode = modeFromText(typed);
+  if (scalpItchFromText(typed)) next.scalpItch = true;
+  if (deniesDandruff(typed)) {
+    next.noDandruff = true;
+    next.concerns = next.concerns.filter((k) => k !== "dandruff");
+  }
   // Safety facts the customer typed (age band, allergy) — read by the app, never left to the AI.
   const band = ageBandFromText(typed);
   if (band === "minor" || (band && !next.ageBand)) next.ageBand = band;
@@ -189,6 +194,8 @@ export function flowHint(profile: Profile, asked: number, messages: UIMessage[] 
     notes.push("Hair fall is all over the head: lead with the hair-growth treatment. Mention that general shedding can come from stress, sleep, diet, iron or thyroid issues, so a doctor can help if it continues or gets worse.");
   if (/clumps/i.test(profile.hairPattern ?? ""))
     notes.push("The customer sees clumps of hair when washing or combing: lead with the hair-growth treatment, but also say that noticeable or sudden clumps can have medical causes, so they should see a doctor if it is heavy or lasts more than a few weeks (never diagnose).");
+  if (profile.scalpItch && !(profile.concerns ?? []).includes("dandruff"))
+    notes.push("The customer has an itchy scalp WITHOUT confirmed dandruff. Do not call it dandruff and do not recommend medicated anti-dandruff shampoos (the app removes them). Say that an itchy scalp has many possible causes, and that a doctor or dermatologist can check it if it lasts or gets worse. Never diagnose.");
   if (/more than 6 months/i.test(profile.duration ?? ""))
     notes.push("This has lasted more than 6 months: mention that a dermatologist or doctor can help with long-standing concerns.");
   if (/strong actives/i.test(profile.history ?? ""))
