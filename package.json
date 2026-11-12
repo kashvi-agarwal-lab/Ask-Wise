@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "catalogue": "node scripts/fetch-catalogue.mjs && node scripts/build-catalogue.mjs",
-    "catalogue:refresh": "node scripts/fetch-catalogue.mjs --refresh && node scripts/build-catalogue.mjs"
+    "catalogue:refresh": "node scripts/fetch-catalogue.mjs --refresh && node scripts/build-catalogue.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.113",
@@ -28,6 +29,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.5",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   }
 }
