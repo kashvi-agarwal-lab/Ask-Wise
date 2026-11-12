@@ -4,9 +4,10 @@ import type { UIMessage } from "ai";
 import type { Profile } from "./prompt";
 import type { Role } from "./catalogue";
 import { applyScriptedAnswer, areasFromText, concernKeysFromText, modeFromText, skinTypeFromText, starterMode } from "./script";
-import { allUserText } from "./safety-text";
+import { allUserText, ageBandFromText, mentionsAllergy } from "./safety-text";
+import { allergensFromText } from "./safety";
 
-export const MAX_QUESTIONS = 7; // a ceiling; the usual depth is 2 to 3 questions
+export const MAX_QUESTIONS = 9; // a ceiling (includes the safety check-in); the usual depth is 3 to 4 questions
 
 const RESULT_TOOLS = ["tool-recommend_products", "tool-build_routine", "tool-update_routine"];
 
@@ -114,6 +115,15 @@ export function applyAnswers(profile: Profile, messages: UIMessage[]): Profile {
   if (areas.length) next.bodyAreas = [...new Set([...(next.bodyAreas ?? []), ...areas])];
   if (!next.skinType) next.skinType = skinTypeFromText(typed);
   if (!next.mode) next.mode = modeFromText(typed);
+  // Safety facts the customer typed (age band, allergy) — read by the app, never left to the AI.
+  const band = ageBandFromText(typed);
+  if (band === "minor" || (band && !next.ageBand)) next.ageBand = band;
+  if (mentionsAllergy(typed)) {
+    next.allergyStatus = "yes";
+    const said = typed.split(/[.!?\n]+/).filter((s) => /allerg|react|broke out|rash (from|after)/i.test(s)).join(". ");
+    const found = allergensFromText(said);
+    if (found.length) next.allergens = [...new Set([...(next.allergens ?? []), ...found])];
+  }
 
   // 2. Their answers to the questions the app asked
   for (let i = 1; i < messages.length; i++) {

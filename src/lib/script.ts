@@ -5,7 +5,8 @@
 import type { UIMessage } from "ai";
 import type { Profile } from "./prompt";
 import { CONCERN_LABELS } from "./concerns";
-import { allUserText } from "./safety-text";
+import { allergensFromText } from "./safety";
+import { allUserText, ageBandFromText, mentionsAllergy, mentionsPregnancy } from "./safety-text";
 
 export type Scripted = { id: string; question: string; options: string[]; multiSelect?: boolean };
 
@@ -97,7 +98,34 @@ export const QUESTIONS: Record<string, Omit<Scripted, "id">> = {
     options: ["No, this is my first time", "Yes, mild everyday products", "Yes, strong actives (acids, retinol, benzoyl peroxide)", "Not sure"],
   },
   mode: { question: "Would you like individual product picks, or a complete routine?", options: ["Individual picks", "Complete routine"] },
+  allergen: {
+    question: "Which ingredient or product caused the reaction? Type it if it isn't listed.",
+    options: ["Fragrance", "Salicylic acid", "Essential oils", "Not sure which one"],
+  },
 };
+
+export const SAFETY_OPTIONS = {
+  minor: "Under 18",
+  pregnant: "Pregnant, breastfeeding or trying to conceive",
+  allergy: "Skin or ingredient allergy",
+  none: "None of these",
+  skip: "Prefer not to say",
+};
+
+/** The safety check-in: one optional, multi-select question. Only asks about what we don't already know. */
+export function safetyQuestion(profile: Profile, text: string): Scripted | null {
+  const opts: string[] = [];
+  if (!profile.ageBand && !ageBandFromText(text)) opts.push(SAFETY_OPTIONS.minor);
+  if (!profile.pregnantOrNursing && !mentionsPregnancy(text)) opts.push(SAFETY_OPTIONS.pregnant);
+  if (!profile.allergyStatus && !mentionsAllergy(text)) opts.push(SAFETY_OPTIONS.allergy);
+  if (!opts.length) return null;
+  return {
+    id: "safety",
+    question: "Before I suggest anything: do any of these apply to you? It's optional, and it only helps me keep suggestions safe.",
+    options: [...opts, SAFETY_OPTIONS.none, SAFETY_OPTIONS.skip],
+    multiSelect: true,
+  };
+}
 
 const HAIR_KEYS = ["hair-fall", "dandruff", "frizz-damage", "dry-hair", "brows-lashes"];
 const WELLNESS_KEYS = ["sleep", "muscle-soreness", "energy-immunity", "bone-health"];
@@ -125,6 +153,13 @@ export function nextScripted(profile: Profile, messages: UIMessage[], needsOptio
     if (!profile.duration && !asked.has("duration")) return q("duration");
     if (!profile.history && !asked.has("history")) return q("history");
   }
+  // Safety check-in (age band, pregnancy, allergy) before any personalised recommendation.
+  if (!asked.has("safety") && (profile.concerns ?? []).length) {
+    const s = safetyQuestion(profile, allUserText(messages));
+    if (s) return s;
+  }
+  // An allergy was mentioned but we don't know what to: ask (once) before recommending anything.
+  if (profile.allergyStatus === "yes" && !profile.allergens?.length && !profile.allergyText && !asked.has("allergen")) return q("allergen");
   if (!profile.mode && !profile.decideForMe && !asked.has("mode")) return q("mode");
   if (profile.mode === "individual" && !profile.needs?.length && !profile.decideForMe && !asked.has("needs") && !isWellness(profile))
     return { id: "needs", question: "Which kinds of products would you like me to look at?", options: [...needsOptions, "You decide for me"], multiSelect: true };
@@ -198,6 +233,31 @@ export function applyScriptedAnswer(next: Profile, id: string, reply: string, ne
     case "mode":
       if (/routine/i.test(r)) next.mode = "routine";
       else if (/individual|pick/i.test(r)) next.mode = "individual";
+      done();
+      break;
+    case "safety": {
+      // (pregnancy, age and allergy in these answers are also read from the text by applyAnswers)
+      if (/prefer not/i.test(r)) {
+        next.ageBand ??= "undisclosed";
+        if (!next.pregnantOrNursing) next.pregnancyUndisclosed = true;
+        next.allergyStatus ??= "undisclosed";
+      } else {
+        if (/under 18/i.test(r)) next.ageBand = "minor";
+        if (/allergy/i.test(r)) next.allergyStatus = "yes";
+        if (/none of these/i.test(r)) {
+          next.ageBand ??= "adult";
+          next.allergyStatus ??= "none";
+        } else {
+          next.ageBand ??= /under 18/i.test(r) ? "minor" : "adult";
+          next.allergyStatus ??= /allergy/i.test(r) ? "yes" : "none";
+        }
+      }
+      done();
+      break;
+    }
+    case "allergen":
+      next.allergyText = r;
+      if (!notSure && !/not sure/i.test(r)) next.allergens = [...new Set([...(next.allergens ?? []), ...allergensFromText(r)])];
       done();
       break;
     case "needs":

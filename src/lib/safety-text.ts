@@ -1,7 +1,7 @@
 // Safety rules that read what the customer typed. Plain text matching only (no catalogue), so
 // both the server and the browser can use it.
 
-export const PREGNANCY_LINE = "Since you're pregnant or nursing, check with your doctor before starting any new active.";
+export const PREGNANCY_LINE = "Since you're pregnant, breastfeeding or trying to conceive, please check with your doctor before starting any new product. Ask Wise leaves out products it can't check automatically; that's caution, not a medical verdict.";
 
 /** True if the customer says they are pregnant or nursing (but not "not pregnant", and not "post-pregnancy" alone). */
 export function mentionsPregnancy(text: string): boolean {
@@ -57,3 +57,49 @@ export function wantsTan(text: string): boolean {
 export function facePigmentation(text: string): boolean {
   return /(pigmentation|dark (spots|patches|marks))/i.test(text) && /\b(face|facial|cheeks?|forehead|chin)\b/i.test(text);
 }
+
+/* ---------- Safety context: age, allergy, and a signature of what has been disclosed ---------- */
+// Plain text rules shared by the server and the browser, so both always agree on what the
+// customer has told us. Only what is needed to stay safe is read: an age BAND (under 18 or not),
+// never a date of birth.
+
+/** "minor" (under 18), "adult", or undefined when the customer has not said. */
+export function ageBandFromText(text: string): "minor" | "adult" | undefined {
+  const t = text.toLowerCase();
+  if (/\bunder[- ]?18\b|\bteen(ager)?s?\b|\bminor\b|\bin (school|class \d+|grade \d+)\b/.test(t)) return "minor";
+  const nums = [
+    ...t.matchAll(/\b(\d{1,2})[\s-]*(?:(?:years?|yrs?)[\s-]*old|y\/?o|saal (?:ki|ka|ke))\b/g),
+    ...t.matchAll(/\b(?:i'?m|i am|age[d]?|my age is|main)\s+(\d{1,2})\b(?!\s*(?:%|ml|g|days?|weeks?|months?|kg|cm))/g),
+  ].map((m) => parseInt(m[1], 10));
+  if (nums.some((n) => n >= 5 && n < 18)) return "minor";
+  if (/\b18 (or|and) (over|above)\b|\b18\+|\bover 18\b|\badult\b/.test(t) || nums.some((n) => n >= 18 && n < 100)) return "adult";
+  return undefined;
+}
+
+/** The customer says they have (or had) an allergy or a reaction, and did not say "no allergies". */
+export function mentionsAllergy(text: string): boolean {
+  const t = text.toLowerCase();
+  const said = /\ballerg|\breact(ed|ion) to\b|\bbroke out (from|after)\b|\brash (from|after)\b|\bskin or ingredient allergy\b/.test(t);
+  if (!said) return false;
+  // "no allergies" / "not allergic" alone do not count
+  const cleaned = t.replace(/\b(no|not|without|zero|don'?t have( any)?)\s+(known\s+)?(allergies|allergy|allergic)\b/g, "");
+  return /\ballerg|\breact(ed|ion) to\b|\bbroke out (from|after)\b|\brash (from|after)\b/.test(cleaned);
+}
+
+export type SafetySignature = { pregnant: boolean; minor: boolean; allergy: boolean };
+
+/** What the customer has disclosed so far. Flags only ever turn on (a later message cannot switch them off). */
+export function safetySignature(text: string): SafetySignature {
+  return { pregnant: mentionsPregnancy(text), minor: ageBandFromText(text) === "minor", allergy: mentionsAllergy(text) };
+}
+export const sigKey = (s: SafetySignature) => `${+s.pregnant}${+s.minor}${+s.allergy}`;
+/** True when `now` discloses something that `then` did not (so earlier picks need re-checking). */
+export const sigStricter = (then: SafetySignature, now: SafetySignature) =>
+  (now.pregnant && !then.pregnant) || (now.minor && !then.minor) || (now.allergy && !then.allergy);
+export function describeSig(s: SafetySignature): string {
+  const bits = [s.pregnant && "pregnancy or breastfeeding", s.minor && "being under 18", s.allergy && "an allergy"].filter(Boolean) as string[];
+  return bits.length > 1 ? `${bits.slice(0, -1).join(", ")} and ${bits[bits.length - 1]}` : bits[0] ?? "";
+}
+
+export const MINOR_LINE =
+  "Because you're under 18, I only suggest gentle everyday basics, nothing medicated or strong. Please involve a parent or guardian, and see a doctor for acne, hair fall or anything that worries you.";

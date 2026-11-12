@@ -10,10 +10,10 @@ import {
 } from "ai";
 import { z } from "zod";
 import { getModel } from "@/lib/model";
-import { concernLabels, getProduct, roleOf } from "@/lib/catalogue";
+import { concernLabels, getProduct, roleOf, products } from "@/lib/catalogue";
 import { systemPrompt, type Profile } from "@/lib/prompt";
-import { mentionsPregnancy, allUserText, needsDoctor, recentUserText, dryOrSensitive } from "@/lib/safety-text";
-import { isAllowed, strengthOf, type SafetyCtx } from "@/lib/safety";
+import { mentionsPregnancy, allUserText, needsDoctor, recentUserText, dryOrSensitive, safetySignature, sigStricter, describeSig } from "@/lib/safety-text";
+import { isAllowed, strengthOf, exclusionReason, type SafetyCtx } from "@/lib/safety";
 import { flowHint, questionState, applyAnswers, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
 import { nextScripted, starterMode } from "@/lib/script";
 import {
@@ -51,6 +51,23 @@ function lastToolOutput<T>(messages: UIMessage[], toolName: string): T | null {
   return null;
 }
 
+/** Sentences where the customer talks about an allergy or a reaction. */
+const allergySentences = (text: string) =>
+  text.split(/[.!?\n]+/).filter((s) => /allerg|react|broke out|rash (from|after)/i.test(s)).join(". ");
+
+/** Bodywise products the customer named as causing a reaction (matched on distinctive name words). */
+function reactedProductFamilies(said: string): string[] {
+  const t = said.toLowerCase();
+  if (!t.trim()) return [];
+  const fams = new Set<string>();
+  for (const p of products) {
+    const words = p.displayName.toLowerCase().replace(/be bodywise|bodywise/g, "").match(/[a-z0-9%]+/g) ?? [];
+    const key = words.filter((w) => w.length > 2 && !["with", "for", "and", "the"].includes(w));
+    if (key.length >= 2 && key.every((w) => t.includes(w))) fams.add(p.family);
+  }
+  return [...fams];
+}
+
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
   if (!Array.isArray(messages) || messages.length > 60) {
@@ -61,9 +78,16 @@ export async function POST(req: Request) {
   // Pregnancy is read from what the customer typed, so the safety rule never depends on the AI remembering it.
   const pregnantByText = mentionsPregnancy(allUserText(messages));
   if (pregnantByText) profile = { ...profile, pregnantOrNursing: true };
+  // A product the customer named as the cause of a reaction (their words, matched to the catalogue).
+  const reactedFamilies = reactedProductFamilies(`${profile.allergyText ?? ""} ${allergySentences(allUserText(messages))}`);
+  const allergyUnknown = profile.allergyStatus === "yes" && !(profile.allergens ?? []).length;
   const safety = (): SafetyCtx => ({
     pregnant: pregnantByText || profile.pregnantOrNursing === true,
     mildOnly: dryOrSensitive(allUserText(messages), profile.skinType) || starter, // dry/sensitive skin, or too little known: no strong actives at all
+    minor: profile.ageBand === "minor",
+    allergens: profile.allergens ?? [],
+    allergyUnknown,
+    excludeFamilies: reactedFamilies,
   });
   let routine: Routine | null = lastToolOutput<Routine>(messages, "build_routine");
   const lastUpdate = lastToolOutput<Routine>(messages, "update_routine");
@@ -95,7 +119,19 @@ export async function POST(req: Request) {
   const alerts: string[] = [];
   if (profile.pregnantOrNursing)
     alerts.push(
-      `This customer is PREGNANT OR NURSING. The app already removes every product with retinol, salicylic acid, benzoyl peroxide, hydroquinone or chemical exfoliants (AHA, glycolic, lactic) from your tools, so only recommend what the tools return. If no safe product fits their concern (for example acne or pigmentation treatments need actives), say so plainly and do NOT show product cards for that concern. You may still offer pregnancy-friendly basics (mineral sunscreen, ceramide or peptide moisturiser, gentle non-active cleanser) when those are what they want. Never call any product "safe in pregnancy". The app adds the doctor line itself.`
+      `This customer is PREGNANT, BREASTFEEDING OR TRYING TO CONCEIVE. The app follows a conservative rule: it does not suggest products with acids, benzoyl peroxide, retinoids, anti-dandruff or hair-growth actives, supplements, or products without a full ingredient list, so your tools only return products outside that list. This is the app's caution, NOT a medical verdict: never say a product is "safe in pregnancy", "pregnancy-safe" or that an ingredient is "banned". If the concern needs an active (acne, pigmentation, hair fall, dandruff), say plainly that you won't suggest a treatment automatically and that their doctor is the right person to advise; do not show treatment cards. You may offer the everyday basics the tools return if they want them. The app adds the doctor line itself.`
+    );
+  if (profile.ageBand === "minor")
+    alerts.push(
+      "This customer is UNDER 18. The app only allows gentle everyday basics (no acids, benzoyl peroxide, medicated anti-dandruff, hair-growth products, supplements or razors), so only recommend what the tools return. Use simple, kind language. Suggest involving a parent or guardian, and a doctor for acne, hair fall or anything that worries them. Never diagnose. The app adds this guidance line itself."
+    );
+  if (allergyUnknown)
+    alerts.push(
+      "This customer mentioned an ALLERGY or a reaction, but the app does not know which ingredient caused it, so it cannot check products against it. Do NOT recommend, name or link any product. Explain kindly in 2 or 3 sentences that without knowing the ingredient you can't check compatibility, and suggest they ask a doctor or dermatologist (or the Be Bodywise team) which ingredient it was; if they tell you the ingredient name, you can check the range for them. NEVER suggest patch-testing something they may be allergic to."
+    );
+  else if ((profile.allergens ?? []).length)
+    alerts.push(
+      `This customer reacts to: ${profile.allergens!.join(", ")}. The app removes every product whose full ingredient list mentions these (or a common alias), and every product whose full ingredient list is not available. Say that you checked the ingredient lists, that ingredient names vary so they should still read the label, and that a doctor can confirm. NEVER suggest patch-testing a product that might contain their allergen.`
     );
   // Severe or medical problems get a doctor referral and NO products at all (the AI gets no tools).
   const referral = needsDoctor(recentUserText(messages, 3));
@@ -107,23 +143,47 @@ export async function POST(req: Request) {
     alerts.push(
       "This customer has DRY or SENSITIVE skin. The app already removes strong actives (2%+ salicylic acid, benzoyl peroxide, 5%+ acids, scrubs) from your tools. Never call any product that contains an active ingredient 'gentle', and never say it 'won't strip', 'won't dry' or 'is safe for' dry or sensitive skin. Say 'milder', and advise starting slowly and patch-testing. Lead with the mildest option."
     );
-  const alertText = alerts.join("\n");
+
+  // Did the customer disclose pregnancy, age or an allergy AFTER seeing products? Then the app
+  // re-checks everything shown so far before anything else happens (see recheck_routine).
+  const lastResultsAt = messages.findLastIndex((m) =>
+    m.role === "assistant" && (m.parts as { type: string }[]).some((p) => /^tool-(recommend_products|build_routine|update_routine|recheck_routine)$/.test(p.type))
+  );
+  const sigThen = safetySignature(allUserText(messages.slice(0, Math.max(0, lastResultsAt))));
+  const sigNow = safetySignature(allUserText(messages));
+  const needsRecheck = lastResultsAt >= 0 && sigStricter(sigThen, sigNow) && !referral;
+
+  if (needsRecheck)
+    alerts.push(
+      `The customer just told you about ${describeSig(sigNow)} AFTER seeing products. The app has re-checked everything shown so far (recheck_routine): products it flagged are no longer suggested, and the earlier cards are marked as replaced. In 2 or 3 sentences, say you've re-checked their picks with this in mind, name what was flagged in plain words (the app shows the list and reasons), and do not recommend any flagged product again. Then follow the other safety alerts.`
+    );
+  const finalAlerts = alerts.join("\n");
 
   const result = streamText({
     model: getModel(),
-    instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked, messages), alertText),
+    instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked, messages), finalAlerts),
     messages: await convertToModelMessages(messages),
     stopWhen: [isStepCount(14), hasToolCall("ask_question"), hasToolCall("ask_needs"), hasToolCall("ask_scripted")], // a question always ends the turn so the customer can answer
     // The small free model sometimes searches and then just chats instead of showing products.
     // Once it has searched, it must finish with a real answer tool (ask / recommend / routine / compare).
     prepareStep: ({ steps, stepNumber }) => {
       if (referral) return { toolChoice: "none" as const }; // hard gate: no tools, so no product cards and no Buy links
+      if (needsRecheck && stepNumber === 0)
+        return { toolChoice: { type: "tool" as const, toolName: "recheck_routine" as const }, activeTools: ["recheck_routine"] as never };
+      const rechecked = steps.some((st) => st.toolCalls.some((c) => c.toolName === "recheck_routine"));
+      // Allergy with an unknown cause: ask which ingredient first, otherwise no product tools at all.
+      if (allergyUnknown) {
+        const q = stepNumber === 0 || (rechecked && stepNumber === 1) ? pending() : null;
+        return q?.id === "allergen"
+          ? { toolChoice: { type: "tool" as const, toolName: "ask_scripted" as const }, activeTools: ["ask_scripted"] as never }
+          : { toolChoice: "none" as const };
+      }
       // Until we know "individual picks or a routine", the AI may not show products yet: it must ask.
       const next = questionState(messages).asked < MAX_QUESTIONS ? pending() : null;
       const blocked = next !== null;
       const ALL = ["update_profile", "search_products", "get_product_details", "compare_products", "recommend_products", "build_routine", "update_routine", "ask_needs", "ask_question", "ask_scripted"];
       // The app asks its own questions (it never relies on the AI to remember or word them).
-      if (stepNumber === 0 && next) return { toolChoice: { type: "tool" as const, toolName: "ask_scripted" as const }, activeTools: ["ask_scripted"] as never };
+      if ((stepNumber === 0 || (rechecked && stepNumber === 1)) && next) return { toolChoice: { type: "tool" as const, toolName: "ask_scripted" as const }, activeTools: ["ask_scripted"] as never };
       const used = new Set(steps.flatMap((s) => s.toolCalls.map((c) => c.toolName as string)));
       const answered = ["ask_question", "ask_needs", "ask_scripted", "recommend_products", "build_routine", "update_routine", "compare_products"].some((t) => used.has(t));
       if (used.has("search_products") && !answered)
@@ -325,6 +385,38 @@ export async function POST(req: Request) {
         },
       }),
 
+      recheck_routine: tool({
+        description:
+          "Re-check every product already shown in this chat against what the customer has just told you (pregnancy, age, allergy). Takes no input. Returns which products are no longer suggested and why, and the routine with only the products that still fit.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          const ids: string[] = [];
+          for (const m of messages)
+            for (const part of m.parts as { type: string; output?: { cards?: { id: string }[]; items?: { id: string }[]; routine?: { items?: { id: string }[] } } }[]) {
+              part.output?.cards?.forEach((c) => ids.push(c.id));
+              part.output?.items?.forEach((c) => ids.push(c.id));
+              part.output?.routine?.items?.forEach((c) => ids.push(c.id));
+            }
+          const ctx = safety();
+          const flagged: { id: string; name: string; reason: string }[] = [];
+          const kept: string[] = [];
+          for (const id of [...new Set(ids)]) {
+            const p = getProduct(id);
+            if (!p) continue;
+            const reason = exclusionReason(p, ctx);
+            if (reason) flagged.push({ id, name: cardFull(p).name, reason });
+            else kept.push(id);
+          }
+          let next: Routine | null = null;
+          if (routine) {
+            const keep = routine.items.filter((i) => kept.includes(i.id)).map((i) => ({ id: i.id, slots: i.slots }));
+            next = keep.length ? buildRoutine(keep, ctx) : null;
+          }
+          routine = next;
+          return { about: describeSig(sigNow), flagged, keptCount: kept.length, routine: next };
+        },
+      }),
+
       ask_scripted: tool({
         description: "Ask the customer the app's next question. Takes no input: the app words the question and builds the buttons.",
         inputSchema: z.object({}),
@@ -361,6 +453,11 @@ export async function POST(req: Request) {
   return createUIMessageStreamResponse({
     stream: toUIMessageStream({
       stream: result.stream,
+      // The safety context this reply was made under, so the browser can tell which picks are current.
+      messageMetadata: ({ part }) =>
+        part.type === "start"
+          ? { safety: { ...sigNow, allergens: profile.allergens ?? [], allergyUnknown, mildOnly: !!safety().mildOnly } }
+          : undefined,
       // Turn technical errors into a short message the customer can understand
       onError: (error) => {
         const text = String((error as { message?: string })?.message ?? error);
