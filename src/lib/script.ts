@@ -12,6 +12,24 @@ export type Scripted = { id: string; question: string; options: string[]; multiS
 
 /* ---------- Reading what the customer already said ---------- */
 
+/** Attempts to read the app's instructions, keys or settings (always declined, never followed). */
+export const asksForInternals = (text: string) =>
+  /system prompt|your (instructions|prompt|rules|tools|config)|ignore (all |any |the |your )?(previous |prior |above )?(instructions|rules)|api[ _-]?key|secret|\.env\b|env(ironment)? var|password|developer mode|jailbreak|reveal (your|the) (prompt|instructions)/i.test(text);
+
+const ON_TOPIC =
+  /skin|hair|scalp|body|face|acne|pimple|spot|routine|product|bodywise|be bodywise|wash|serum|lotion|sunscreen|spf|\btan\b|dry|oily|itch|rash|dandruff|pregnan|breastfe|allerg|cream|moistur|underarm|odou?r|sweat|heel|stretch|price|cart|order|buy|shampoo|condition|frizz|pigment|dark|patch|glow|dull|wrinkle|ageing|aging|gumm|supplement|sleep|vitamin|baal|chehr|daane|khujli|rusi|twacha/i;
+const QUESTION_LIKE =
+  /\?|^(what|who|when|where|why|how|which|tell me|write|explain|translate|calculate|solve|give me|list|define)\b|capital of|weather|joke|news|cricket|movie|recipe|stock|bitcoin|\b(code|python|javascript|typescript|java|sql|html|css|regex|function|program|script|debug|compile|algorithm)\b/i;
+
+/** The latest message is not about skin, hair or body care (trivia, code, homework...) or asks for internals. */
+export function isOffTopic(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (asksForInternals(t)) return true;
+  if (ON_TOPIC.test(t) || concernKeysFromText(t).length || writesHinglish(t)) return false;
+  return QUESTION_LIKE.test(t);
+}
+
 /** "no dandruff", "not dandruff", "without flakes", "rusi nahi"... */
 export function deniesDandruff(text: string): boolean {
   const t = text.toLowerCase();
@@ -193,6 +211,9 @@ export function nextScripted(profile: Profile, messages: UIMessage[], needsOptio
 const lowerFirst = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 
 function nextScriptedRaw(profile: Profile, messages: UIMessage[], needsOptions: string[]): Scripted | null {
+  // No concern yet (a greeting, a general question, something unrelated): the app's skin
+  // questionnaire does not start. The AI asks what they need help with, or redirects.
+  if (!(profile.concerns ?? []).length && !profile.scalpItch) return null;
   const unsure = new Set(profile.unsure ?? []);
   const asked = new Set(profile.askedIds ?? []);
   const q = (id: string): Scripted => ({ id, ...QUESTIONS[id] });

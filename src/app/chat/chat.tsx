@@ -650,8 +650,14 @@ function Message({
         const out = p.output as Record<string, unknown>;
         if (name === "ask_question" || name === "ask_needs" || name === "ask_scripted") return <Bubble key={i}>{String(out.question)}</Bubble>;
         if (name === "recommend_products") {
-          const g = out as unknown as { need: string; cards: (ProductCard & { why: string; chooseIf?: string; isBest: boolean })[]; bestReason: string };
-          if (!g.cards?.length) return null;
+          const g = out as unknown as { need: string; cards: (ProductCard & { why: string; chooseIf?: string; isBest: boolean })[]; bestReason: string; missing?: string };
+          if (!g.cards?.length)
+            return g.missing ? (
+              <section key={i} className="grid gap-2">
+                {g.need && <h3 className="text-xs font-medium uppercase tracking-widest text-slate">{g.need}</h3>}
+                <p className="rounded-2xl border border-sky-2 bg-white px-4 py-3 text-sm leading-relaxed text-navy">{g.missing}</p>
+              </section>
+            ) : null;
           return (
             <section key={i} className="grid gap-3">
               {g.need && <h3 className="text-xs font-medium uppercase tracking-widest text-slate">{g.need}</h3>}
