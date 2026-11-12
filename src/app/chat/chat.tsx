@@ -383,6 +383,8 @@ export default function Chat() {
                 parts={m.parts as Part[]}
                 streaming={busy && m.id === last?.id}
                 locked={m.role === "assistant" ? lockedNote(sigAt(messages as Msg[], i), nowSig, busy) : undefined}
+                routineOld={m.role === "assistant" && routineAt >= 0 && i !== routineAt ? "An earlier version. Your current routine is further down." : undefined}
+                failed={!!error && !busy && m.id === last?.id && m.role === "assistant"}
                 minor={nowSig.minor}
                 pregnant={pregnant}
                 tan={wantsTan(topicText)}
@@ -394,14 +396,7 @@ export default function Chat() {
 
             {showThinking && <Typing label="Thinking…" />}
 
-            {error && (
-              <div className="rounded-2xl bg-white p-4 text-sm text-navy ring-1 ring-sky-2">
-                {error.message || "Something went wrong. Please try again."}
-                <button onClick={() => regenerate()} className="ml-2 font-medium text-blue underline">
-                  Retry
-                </button>
-              </div>
-            )}
+            {error && !busy && <RetryBox message={error.message} onRetry={() => regenerate()} />}
 
             {ask && !busy && <QuickReplies key={last.id} options={ask.options} multi={!!ask.multiSelect} onSend={send} />}
             {cartFlags.length > 0 && !busy && (
@@ -595,6 +590,8 @@ function Message({
   parts,
   streaming,
   locked,
+  routineOld,
+  failed,
   minor,
   pregnant,
   tan,
@@ -606,6 +603,8 @@ function Message({
   parts: Part[];
   streaming: boolean;
   locked?: string;
+  routineOld?: string; // this message's routine was replaced by a later one
+  failed?: boolean; // this reply broke off with an error: it will be replaced on Retry
   minor: boolean;
   pregnant: boolean;
   tan: boolean;
@@ -625,7 +624,11 @@ function Message({
   // The explanation always comes first, then the product cards / routine, so the customer
   // reads the answer before seeing what is recommended. (The AI writes its text after the
   // tool call, so we reorder here.) Cards wait for the text while it is still streaming.
+  // A reply that broke off is not shown half-finished: Retry replaces it.
+  if (failed) return null;
   const isText = (p: Part) => p.type === "text" && !!p.text?.trim();
+  // Only the LAST routine in a reply is shown (never a 1-product routine followed by a 2-product one).
+  const lastRoutinePart = parts.findLastIndex((p) => p.state === "output-available" && /^tool-(build_routine|update_routine|recheck_routine)$/.test(p.type) && !(p.output as { error?: string })?.error);
   const hasText = parts.some(isText);
   // Every product shown in this message (picks and routine), for evidence-based notes below.
   type Shown = { name: string; category?: string; concernKeys?: string[]; primaryKeys?: string[] };
@@ -639,7 +642,7 @@ function Message({
   // Treatments lead, supporting basics (cleansers, moisturisers, sunscreen) follow.
   const KIND_ORDER: Record<string, number> = { treatment: 0, deodorant: 1, exfoliator: 2, cleanser: 3, moisturiser: 4, conditioner: 5, sunscreen: 6, supplement: 7 };
   const rank = (p: Part) => (p.type === "tool-recommend_products" ? (KIND_ORDER[(p.output as { kind?: string } | undefined)?.kind ?? ""] ?? 9) : -1);
-  const nonText = parts.filter((p) => !isText(p));
+  const nonText = parts.filter((p, idx) => !isText(p) && !(/^tool-(build_routine|update_routine)$/.test(p.type) && idx !== lastRoutinePart));
   const ordered = [...parts.filter(isText), ...nonText.map((p, i) => ({ p, i })).sort((a, b) => rank(a.p) - rank(b.p) || a.i - b.i).map((x) => x.p)].filter(
     (p) => !(streaming && !hasText && p.state === "output-available" && /^tool-(recommend_products|build_routine|update_routine|compare_products)$/.test(p.type))
   );
@@ -651,7 +654,8 @@ function Message({
         if (isText(p)) return <Bubble key={i}>{p.text}</Bubble>;
         const name = p.type.replace("tool-", "");
         if (p.state !== "output-available") {
-          if (!WORKING[name] || p.state === "output-error") return null;
+          // loading lines only while this reply is actually streaming (no stuck skeletons after an error)
+          if (!streaming || !WORKING[name] || p.state === "output-error") return null;
           return RESULT_TOOLS.includes(name) ? <CardSkeleton key={i} label={WORKING[name]} /> : <Typing key={i} label={WORKING[name]} />;
         }
         const out = p.output as Record<string, unknown>;
@@ -676,13 +680,13 @@ function Message({
         }
         if (name === "compare_products") return <CompareTable key={i} products={(out.products as never[]) ?? []} />;
         if (ROUTINE_TOOLS.includes(p.type) && out.items)
-          return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} onCartAll={onCartAll} locked={locked} />;
+          return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} onCartAll={onCartAll} locked={locked ?? routineOld} />;
         if (name === "recheck_routine") {
           const rc = out as unknown as { about: string; flagged: { id: string; name: string; reason: string }[]; keptCount: number; routine: Routine | null };
           return (
             <div key={i} className="grid gap-3">
               <RecheckCard about={rc.about} flagged={rc.flagged ?? []} keptCount={rc.keptCount ?? 0} />
-              {rc.routine?.items?.length ? <RoutineChatCard r={rc.routine} onOpen={onOpenRoutine} onCartAll={onCartAll} locked={locked} title="Your re-checked routine" /> : null}
+              {rc.routine?.items?.length ? <RoutineChatCard r={rc.routine} onOpen={onOpenRoutine} onCartAll={onCartAll} locked={locked ?? routineOld} title="Your re-checked routine" /> : null}
             </div>
           );
         }
@@ -709,5 +713,32 @@ function Message({
       {minor && hasResults && !streaming && <Bubble>{MINOR_LINE}</Bubble>}
     </div>
     </CardContext.Provider>
+  );
+}
+
+/** Error with a Retry that resends the same request. When the AI is busy (rate limit), Retry waits first. */
+function RetryBox({ message, onRetry }: { message?: string; onRetry: () => void }) {
+  const throttled = /lot of people|busy|rate/i.test(message ?? "");
+  const [wait, setWait] = useState(throttled ? 20 : 0);
+  const [sent, setSent] = useState(false);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+  return (
+    <div className="rounded-2xl bg-white p-4 text-sm text-navy ring-1 ring-sky-2" role="alert">
+      {message || "Something went wrong. Please try again."}
+      <button
+        onClick={() => {
+          setSent(true);
+          onRetry();
+        }}
+        disabled={wait > 0 || sent}
+        className="ml-2 font-medium text-blue underline disabled:text-slate disabled:no-underline"
+      >
+        {wait > 0 ? `Retry in ${wait}s` : "Retry"}
+      </button>
+    </div>
   );
 }

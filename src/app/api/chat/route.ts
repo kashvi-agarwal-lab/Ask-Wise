@@ -68,9 +68,25 @@ function reactedProductFamilies(said: string): string[] {
   return [...fams];
 }
 
+/** Sort an AI error into a kind we can explain (never log or show the raw provider payload). */
+function errorKind(text: string): "throttled" | "timeout" | "invalid" | "other" {
+  if (/quota|rate.?limit|429|RESOURCE_EXHAUSTED|too many requests|overloaded|503|UNAVAILABLE/i.test(text)) return "throttled";
+  if (/timeout|timed out|aborted|deadline/i.test(text)) return "timeout";
+  if (/invalid|schema|parse|validation|400/i.test(text)) return "invalid";
+  return "other";
+}
+const redact = (t: string) => t.replace(/(key|token|authorization)[=:]\s*\S+/gi, "$1=[redacted]").replace(/AIza[0-9A-Za-z_-]{20,}/g, "[redacted]").slice(0, 300);
+
 export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json();
-  if (!Array.isArray(messages) || messages.length > 60) {
+  const requestId = crypto.randomUUID().slice(0, 8); // ties a customer's error message to the server log
+  let body: { messages?: UIMessage[] };
+  try {
+    body = await req.json();
+  } catch {
+    return new Response("Bad request.", { status: 400 });
+  }
+  const messages = body.messages as UIMessage[];
+  if (!Array.isArray(messages) || !messages.length || messages.length > 60) {
     return new Response("Conversation too long. Please start a new one.", { status: 400 });
   }
 
@@ -102,6 +118,7 @@ export async function POST(req: Request) {
   const starter = starterMode(profile, messages);
 
   const shown = new Set<string>(); // products already shown in this reply: never show one twice
+  let builtThisTurn = false; // only one routine per reply
   const doneGroups = new Set<string>(); // kind+area groups already shown in this reply: never show the same group twice
   // When the customer asks for alternatives, never offer what they have already seen or got in their routine.
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -173,6 +190,10 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: getModel(),
+    // Bounded retries with exponential backoff (built into the SDK), and time limits so a stuck call
+    // ends with a clear message instead of hanging until the platform kills it.
+    maxRetries: 2,
+    timeout: { totalMs: 55_000, stepMs: 25_000 },
     instructions: systemPrompt(profile, !!routine, flowHint(profile, questionState(messages).asked, messages), finalAlerts),
     messages: await convertToModelMessages(messages),
     stopWhen: [isStepCount(14), hasToolCall("ask_question"), hasToolCall("ask_needs"), hasToolCall("ask_scripted")], // a question always ends the turn so the customer can answer
@@ -209,6 +230,9 @@ export async function POST(req: Request) {
       const done = steps.flatMap((s) => s.toolCalls).filter((c) => c.toolName === "recommend_products").length;
       if (need > 1 && done > 0 && done < need)
         return { toolChoice: { type: "tool" as const, toolName: "recommend_products" as const }, activeTools: ["recommend_products"] as never };
+      // One routine per reply: once built (or re-checked), the AI can only explain it, not build another.
+      if (used.has("build_routine") || used.has("recheck_routine"))
+        return { activeTools: ALL.filter((t) => t !== "build_routine" && t !== "recommend_products") as never };
       return undefined;
     },
     tools: {
@@ -388,6 +412,9 @@ export async function POST(req: Request) {
           products: z.array(z.object({ productId: z.string() })).min(1).max(8),
         }),
         execute: async ({ products }) => {
+          // Atomic: a reply never shows a one-product routine followed by a two-product one.
+          if (builtThisTurn) return { error: "A routine was already built in this reply. Explain that one instead of building another." };
+          builtThisTurn = true;
           const r = buildRoutine(products.map((p) => ({ id: p.productId })), safety(), { companions: true, concerns: profile.concerns ?? [] });
           routine = r;
           return r;
@@ -486,10 +513,11 @@ export async function POST(req: Request) {
       // Turn technical errors into a short message the customer can understand
       onError: (error) => {
         const text = String((error as { message?: string })?.message ?? error);
-        console.error("[chat error]", text.slice(0, 300));
-        if (/quota|rate|429|RESOURCE_EXHAUSTED/i.test(text))
-          return "A lot of people are trying the guide right now - give me a minute and ask again.";
-        return "Something went wrong on my side. Please try again.";
+        const kind = errorKind(text);
+        console.error(`[chat ${requestId}] ${kind}: ${redact(text)}`);
+        if (kind === "throttled") return `A lot of people are using Ask Wise right now. Please wait a few seconds, then tap Retry. (ref ${requestId})`;
+        if (kind === "timeout") return `That took too long on my side. Tap Retry and I'll pick up where we were. (ref ${requestId})`;
+        return `Something went wrong on my side. Tap Retry and I'll pick up where we were. (ref ${requestId})`;
       },
     }),
   });
