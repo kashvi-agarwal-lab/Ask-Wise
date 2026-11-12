@@ -20,6 +20,7 @@ export default function CartView() {
   const [ready, setReady] = useState(false);
   const [products, setProducts] = useState<Record<string, ProductCard>>({});
   const [copied, setCopied] = useState(false);
+  const [flags, setFlags] = useState<Record<string, string>>({});
 
   // Is this a cart someone shared with us? (the cart is inside the web address)
   useEffect(() => {
@@ -38,16 +39,24 @@ export default function CartView() {
     const ids = idKey ? idKey.split(",") : [];
     if (!ids.length) return;
     let cancelled = false;
-    fetch("/api/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids }) })
+    // What the customer told Ask Wise in their latest chat (pregnancy, age, allergy), if anything:
+    // items the app would no longer suggest are FLAGGED here, never removed.
+    let ctx: unknown;
+    try {
+      ctx = JSON.parse(localStorage.getItem("askwise-safety-v1") ?? "null") ?? undefined;
+    } catch {}
+    fetch("/api/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids, ctx: shared ? undefined : ctx }) })
       .then((r) => r.json())
-      .then((d: { products: ProductCard[] }) => {
-        if (!cancelled) setProducts((prev) => ({ ...prev, ...Object.fromEntries(d.products.map((p) => [p.id, p])) }));
+      .then((d: { products: ProductCard[]; flags?: Record<string, string> }) => {
+        if (cancelled) return;
+        setProducts((prev) => ({ ...prev, ...Object.fromEntries(d.products.map((p) => [p.id, p])) }));
+        setFlags(d.flags ?? {});
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [idKey]);
+  }, [idKey, shared]);
 
   const rows = lines.map((l) => ({ line: l, p: products[l.id] })).filter((r): r is { line: CartLine; p: ProductCard } => !!r.p);
   const total = rows.reduce((s, r) => s + r.p.price * r.line.qty, 0);
@@ -123,6 +132,11 @@ export default function CartView() {
                     </div>
                   </div>
 
+                  {flags[line.id] && (
+                    <p className="mt-2 rounded-xl border border-blue/30 bg-sky px-3 py-2 text-[13px] leading-snug text-navy">
+                      <span className="font-medium">Check before buying: </span>Ask Wise would no longer suggest this, because {flags[line.id]}. It&apos;s still in your cart. Your doctor can advise.
+                    </p>
+                  )}
                   {!isShared && <VariantPicker c={{ ...p, chosen: line.chosen }} />}
 
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 px-1">

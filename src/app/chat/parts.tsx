@@ -15,6 +15,8 @@ export const CardContext = createContext<{
   routineIds: Set<string>;
   cartIds: Set<string>;
   profileConcerns: string[];
+  locked?: string; // set when these picks were replaced after a safety disclosure: no buying from them
+  allergy?: boolean; // the customer mentioned an allergy: never suggest patch-testing
 }>({ onVariant: () => {}, onAdd: () => {}, onCart: () => {}, routineIds: new Set(), cartIds: new Set(), profileConcerns: [] });
 
 /* ---------- Where customers actually buy ---------- */
@@ -164,10 +166,14 @@ export function ProductCardView({
   badge?: string;
   note?: string; // for the best pick: why it is best; for the others: when to choose them
 }) {
-  const { onAdd, onCart, routineIds, cartIds, profileConcerns } = useContext(CardContext);
+  const { onAdd, onCart, routineIds, cartIds, profileConcerns, locked, allergy } = useContext(CardContext);
   const precautions = [
     ...c.precautions,
-    c.isSupplement ? "Check with a doctor before starting any supplement." : "Patch-test on a small area for 24 hours before regular use.",
+    c.isSupplement
+      ? "Check with a doctor before starting any supplement."
+      : allergy
+        ? "You mentioned an allergy: check the full ingredient list on the pack, and ask a doctor if you're unsure. Don't test a product you may be allergic to."
+        : "Patch-test on a small area for 24 hours before regular use.",
   ];
   const matched = (c.concernKeys ?? []).filter((k) => profileConcerns.includes(k)).map((k) => CONCERN_LABELS[k] ?? k);
   const inRoutine = routineIds.has(c.id);
@@ -240,6 +246,9 @@ export function ProductCardView({
         <Expand title="Precautions">
           <ul className="list-disc space-y-1 pl-4">{precautions.map((s) => <li key={s}>{s}</li>)}</ul>
         </Expand>
+        {locked ? (
+          <p className="border-t border-sky-2/70 pb-0.5 pt-2.5 text-[13px] text-slate">{locked}</p>
+        ) : (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sky-2/70 pb-0.5 pt-2.5">
           <span className="flex flex-wrap items-center gap-1.5">
             <BuyLink c={c} />
@@ -261,6 +270,7 @@ export function ProductCardView({
           </span>
           {actions}
         </div>
+        )}
       </div>
     </div>
   );
@@ -351,7 +361,23 @@ export function routineText(r: Routine) {
 }
 
 /** Full routine: used in the side panel (desktop) and the bottom sheet (mobile). */
-export function RoutineView({ r, onAsk, onRemove, onCartAll }: { r: Routine; onAsk: (text: string) => void; onRemove: (id: string) => void; onCartAll: (r: Routine) => void }) {
+export function RoutineView({ r, onAsk, onRemove, onCartAll, locked }: { r: Routine; onAsk: (text: string) => void; onRemove: (id: string) => void; onCartAll: (r: Routine) => void; locked?: string }) {
+  const ctx = useContext(CardContext);
+  if (locked)
+    return (
+      <CardContext.Provider value={{ ...ctx, locked }}>
+        <div className="flex flex-col gap-3">
+          <div className="rounded-2xl border border-blue/30 bg-sky p-3 text-sm leading-relaxed text-navy">{locked}</div>
+          <div className="pointer-events-none grid gap-3 opacity-60">
+            {r.items.map((it) => <ProductCardView key={it.id} c={it} when={it.when} actions={<span />} />)}
+          </div>
+        </div>
+      </CardContext.Provider>
+    );
+  return <RoutineViewLive r={r} onAsk={onAsk} onRemove={onRemove} onCartAll={onCartAll} />;
+}
+
+function RoutineViewLive({ r, onAsk, onRemove, onCartAll }: { r: Routine; onAsk: (text: string) => void; onRemove: (id: string) => void; onCartAll: (r: Routine) => void }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -467,10 +493,10 @@ export function RoutineView({ r, onAsk, onRemove, onCartAll }: { r: Routine; onA
 }
 
 /** Compact version shown inside the chat message. */
-export function RoutineChatCard({ r, onOpen, onCartAll }: { r: Routine; onOpen: () => void; onCartAll: (r: Routine) => void }) {
+export function RoutineChatCard({ r, onOpen, onCartAll, locked, title = "Your routine" }: { r: Routine; onOpen: () => void; onCartAll: (r: Routine) => void; locked?: string; title?: string }) {
   return (
-    <div className="rounded-3xl bg-white p-4 ring-1 ring-sky-2/70">
-      <p className="font-serif text-xl text-navy">Your routine</p>
+    <div className={`rounded-3xl bg-white p-4 ring-1 ring-sky-2/70 ${locked ? "opacity-70" : ""}`}>
+      <p className="font-serif text-xl text-navy">{title}</p>
       <ul className="mt-2 space-y-1 text-sm text-ink/85">
         {routineGroups(r).map((g) => (
           <li key={g.label}>
@@ -478,6 +504,10 @@ export function RoutineChatCard({ r, onOpen, onCartAll }: { r: Routine; onOpen: 
           </li>
         ))}
       </ul>
+      {locked ? (
+        <p className="mt-3 border-t border-sky-2 pt-3 text-sm text-slate">{locked}</p>
+      ) : (
+      <>
       <div className="mt-3 flex items-center justify-between border-t border-sky-2 pt-3">
         <span>
           <span className="font-serif text-2xl text-navy">₹{r.total}</span>
@@ -496,6 +526,33 @@ export function RoutineChatCard({ r, onOpen, onCartAll }: { r: Routine; onOpen: 
           Shop on bebodywise.com ↗
         </a>
       </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+/** Shown when the app re-checked earlier picks after the customer told it something new. */
+export function RecheckCard({ about, flagged, keptCount }: { about: string; flagged: { id: string; name: string; reason: string }[]; keptCount: number }) {
+  return (
+    <div className="rounded-3xl border border-blue/30 bg-sky p-4 text-sm leading-relaxed text-navy">
+      <p className="font-serif text-lg">Re-checked for {about || "what you told me"}</p>
+      {flagged.length ? (
+        <>
+          <p className="mt-1 text-slate">These earlier picks are no longer suggested:</p>
+          <ul className="mt-2 space-y-1.5">
+            {flagged.map((f) => (
+              <li key={f.id}>
+                <span className="font-medium">{f.name}</span>: {f.reason}.
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="mt-1">Nothing shown earlier was flagged.</p>
+      )}
+      {keptCount > 0 && <p className="mt-2 text-slate">{keptCount} earlier pick{keptCount === 1 ? " still fits" : "s still fit"}. The earlier cards above are marked as replaced, so buy from the updated suggestions.</p>}
+      <p className="mt-2 text-xs text-slate">This is Ask Wise being cautious, not a medical verdict. Your doctor can advise on any product.</p>
     </div>
   );
 }

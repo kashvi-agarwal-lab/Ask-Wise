@@ -1,16 +1,29 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ProductCard, Routine, Variant } from "@/lib/engine";
 import { CONCERN_LABELS } from "@/lib/concerns";
-import { PREGNANCY_LINE, mentionsPregnancy, allUserText, dryOrSensitive, wantsTan, facePigmentation } from "@/lib/safety-text";
+import {
+  PREGNANCY_LINE,
+  MINOR_LINE,
+  mentionsPregnancy,
+  allUserText,
+  dryOrSensitive,
+  wantsTan,
+  facePigmentation,
+  safetySignature,
+  sigStricter,
+  describeSig,
+  type SafetySignature,
+} from "@/lib/safety-text";
 import CartLink from "@/components/cart-link";
 import { addToCart, useCart } from "@/lib/cart";
-import { CardContext, CompareTable, ProductCardView, RoutineChatCard, RoutineView } from "./parts";
+import { CardContext, CompareTable, ProductCardView, RecheckCard, RoutineChatCard, RoutineView } from "./parts";
 
 const STORAGE_KEY = "bodywise-guide-chat-v1";
+const SAFETY_KEY = "askwise-safety-v1"; // read by the cart page to flag items (the cart itself is never changed)
 
 const STARTERS = [
   "I get acne on my back",
@@ -35,6 +48,7 @@ const WORKING: Record<string, string> = {
   recommend_products: "Picking products for you…",
   build_routine: "Building your routine…",
   update_routine: "Updating your routine…",
+  recheck_routine: "Re-checking your picks…",
 };
 
 type Part = { type: string; state?: string; output?: unknown; text?: string };
@@ -43,15 +57,40 @@ type Msg = { id: string; role: string; parts: unknown[] };
 const RESULT_TOOLS = ["recommend_products", "build_routine", "update_routine", "compare_products"];
 const ROUTINE_TOOLS = ["tool-build_routine", "tool-update_routine"];
 
-/** The current routine is simply the most recent build/update result in the conversation. */
-function currentRoutine(messages: Msg[]): Routine | null {
+/** The current routine is the most recent build/update/re-check result (a re-check can also clear it). */
+function currentRoutine(messages: Msg[]): { r: Routine | null; at: number } {
   let found: Routine | null = null;
-  for (const m of messages)
+  let at = -1;
+  messages.forEach((m, i) => {
     for (const p of m.parts as Part[]) {
+      if (p.state !== "output-available") continue;
       const out = p.output as Routine | undefined;
-      if (ROUTINE_TOOLS.includes(p.type) && p.state === "output-available" && out?.items) found = out;
+      if (ROUTINE_TOOLS.includes(p.type) && out?.items) {
+        found = out;
+        at = i;
+      }
+      if (p.type === "tool-recheck_routine") {
+        found = (p.output as { routine?: Routine | null }).routine ?? null;
+        at = i;
+      }
     }
-  return found;
+  });
+  return { r: found && (found as Routine).items.length ? found : null, at };
+}
+
+type MsgSafety = SafetySignature & { allergens?: string[]; allergyUnknown?: boolean; mildOnly?: boolean };
+const metaSafety = (m: Msg | undefined) => (m as { metadata?: { safety?: MsgSafety } } | undefined)?.metadata?.safety;
+
+/** What had been disclosed when message i was made (server metadata, or the text before it for older chats). */
+const sigAt = (messages: Msg[], i: number): SafetySignature => metaSafety(messages[i]) ?? safetySignature(allUserText(messages.slice(0, i)));
+
+/** "Replaced" text for results made before a later safety disclosure (undefined = still current). */
+function lockedNote(then: SafetySignature, now: SafetySignature, busy: boolean): string | undefined {
+  if (!sigStricter(then, now)) return undefined;
+  const news = describeSig({ pregnant: now.pregnant && !then.pregnant, minor: now.minor && !then.minor, allergy: now.allergy && !then.allergy });
+  return busy
+    ? `Re-checking these for ${news}… Buying is paused until it's done.`
+    : `Replaced: suggested before you mentioned ${news}. See the re-checked suggestions below.`;
 }
 
 /** Facts the customer has told us (saved by the AI each time they share something). */
@@ -97,7 +136,14 @@ export default function Chat() {
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = status === "submitted" || status === "streaming";
-  const routine = useMemo(() => currentRoutine(messages as Msg[]), [messages]);
+  const { r: routine, at: routineAt } = useMemo(() => currentRoutine(messages as Msg[]), [messages]);
+  const nowSig = useMemo(() => safetySignature(allUserText(messages as Msg[])), [messages]);
+  const routineLocked = routine ? lockedNote(sigAt(messages as Msg[], routineAt), nowSig, busy) : undefined;
+  // The safety context of the latest reply (decided by the server), used for routine edits and cart flags.
+  const ctx = useMemo(() => {
+    const lastA = [...(messages as Msg[])].reverse().find((m) => m.role === "assistant" && metaSafety(m));
+    return metaSafety(lastA);
+  }, [messages]);
 
   // Restore the saved chat (it only ever lives in this browser) or start from ?category=
   useEffect(() => {
@@ -169,6 +215,7 @@ export default function Chat() {
 
   const newChat = () => {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(SAFETY_KEY);
     setMessages([]);
     setSheetOpen(false);
   };
@@ -183,6 +230,27 @@ export default function Chat() {
   const cartLines = useCart();
   const cartIds = useMemo(() => new Set(cartLines.map((l) => l.id)), [cartLines]);
   const [toast, setToast] = useState("");
+  const [flagged, setFlagged] = useState<string[]>([]);
+  const ctxKey = ctx ? JSON.stringify(ctx) : "";
+  const flagsActive = !!ctx && (ctx.pregnant || ctx.minor || ctx.allergy);
+  const cartFlags = flagsActive ? flagged.filter((id) => cartIds.has(id)) : [];
+  useEffect(() => {
+    if (!ctx || !flagsActive) return;
+    try {
+      localStorage.setItem(SAFETY_KEY, ctxKey);
+    } catch {}
+    const ids = [...cartIds];
+    if (!ids.length) return;
+    let live = true;
+    fetch("/api/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids, ctx: { pregnant: ctx.pregnant, minor: ctx.minor, allergens: ctx.allergens, allergyUnknown: ctx.allergyUnknown } }) })
+      .then((r) => r.json())
+      .then((d: { flags?: Record<string, string> }) => live && setFlagged(Object.keys(d.flags ?? {})))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxKey, cartIds]);
   const topic = useMemo(() => {
     const first = (messages as Msg[]).find((m) => m.role === "user");
     const text = ((first?.parts ?? []) as Part[]).find((p) => p.type === "text")?.text ?? "";
@@ -207,7 +275,7 @@ export default function Chat() {
   const changeRoutine = async (entries: { id: string; slots?: string[] }[], note: string, input: object) => {
     const before = routine?.items ?? [];
     try {
-      const res = await fetch("/api/routine", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entries, pregnant, mildOnly }) });
+      const res = await fetch("/api/routine", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entries, pregnant, mildOnly, ctx: ctx ? { pregnant: ctx.pregnant, minor: ctx.minor, allergens: ctx.allergens, allergyUnknown: ctx.allergyUnknown, mildOnly: ctx.mildOnly } : undefined }) });
       if (!res.ok) throw new Error();
       const r = (await res.json()) as Routine;
       // keep the size/scent choices the customer already made
@@ -257,16 +325,12 @@ export default function Chat() {
           ? ["Show me alternatives", "Compare the products", "Remove a step"]
           : []
       : [];
-  const healthChips =
-    status === "ready" && !ask && !pregnant && profile.pregnantOrNursing === undefined && !profile.sensitivities && lastParts.some((p) => p.state === "output-available" && (p.type === "tool-recommend_products" || p.type === "tool-build_routine"))
-      ? ["No allergies, not pregnant", "I'm pregnant or nursing", "I have an allergy"]
-      : [];
   const followUpText: Record<string, string> = {
     "Remove a step": "I'd like to remove a step from my routine. Which steps could I do without?",
   };
 
   return (
-    <CardContext.Provider value={{ onVariant, onAdd, onCart, routineIds, cartIds, profileConcerns: profile.concerns ?? [] }}>
+    <CardContext.Provider value={{ onVariant, onAdd, onCart, routineIds, cartIds, profileConcerns: profile.concerns ?? [], allergy: nowSig.allergy }}>
     <div className="flex h-dvh bg-mist">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="border-b border-sky-2/60 bg-white/80 backdrop-blur">
@@ -312,13 +376,14 @@ export default function Chat() {
               </div>
             )}
 
-            {messages.map((m) => (
+            {messages.map((m, i) => (
               <Message
                 key={m.id}
                 role={m.role}
                 parts={m.parts as Part[]}
                 streaming={busy && m.id === last?.id}
-                askHealth={m.id === last?.id && !busy && !pregnant && profile.pregnantOrNursing === undefined && !profile.sensitivities}
+                locked={m.role === "assistant" ? lockedNote(sigAt(messages as Msg[], i), nowSig, busy) : undefined}
+                minor={nowSig.minor}
                 pregnant={pregnant}
                 tan={wantsTan(topicText)}
                 limitedFacePigmentation={facePigmentation(topicText)}
@@ -339,11 +404,10 @@ export default function Chat() {
             )}
 
             {ask && !busy && <QuickReplies key={last.id} options={ask.options} multi={!!ask.multiSelect} onSend={send} />}
-            {healthChips.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {healthChips.map((h) => (
-                  <Chip key={h} onClick={() => send(h === "I have an allergy" ? "I have an allergy to a product or ingredient" : h)}>{h}</Chip>
-                ))}
+            {cartFlags.length > 0 && !busy && (
+              <div className="rounded-2xl border border-blue/30 bg-sky p-3 text-sm leading-relaxed text-navy">
+                {cartFlags.length} item{cartFlags.length === 1 ? "" : "s"} in your cart {cartFlags.length === 1 ? "is" : "are"} no longer suggested after what you told me. Nothing was removed.{" "}
+                <Link href="/cart" className="font-medium text-blue underline">Review your cart</Link>
               </div>
             )}
             {followUps.length > 0 && (
@@ -404,7 +468,7 @@ export default function Chat() {
       {routine && (
         <aside className="hidden w-[400px] shrink-0 overflow-y-auto border-l border-sky-2/60 bg-white/60 p-5 lg:block">
           <h2 className="mb-4 font-serif text-2xl text-navy">Your routine</h2>
-          <RoutineView r={routine} onAsk={send} onRemove={onRemove} onCartAll={onCartAll} />
+          <RoutineView r={routine} onAsk={send} onRemove={onRemove} onCartAll={onCartAll} locked={routineLocked} />
         </aside>
       )}
 
@@ -420,7 +484,7 @@ export default function Chat() {
               </button>
             </div>
             <div className="overflow-y-auto px-5 pb-8 pt-2">
-              <RoutineView r={routine} onAsk={send} onRemove={onRemove} onCartAll={onCartAll} />
+              <RoutineView r={routine} onAsk={send} onRemove={onRemove} onCartAll={onCartAll} locked={routineLocked} />
             </div>
           </div>
         </div>
@@ -443,7 +507,7 @@ function QuickReplies({ options, multi, onSend }: { options: string[]; multi: bo
   useEffect(() => {
     if (picked.length === 1) continueRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [picked.length]);
-  const isDecide = (o: string) => /decide|not sure|you choose/i.test(o);
+  const isDecide = (o: string) => /decide|not sure|you choose|none of these|prefer not/i.test(o);
   if (!multi) {
     return (
       <div className="flex flex-wrap gap-2">
@@ -530,7 +594,8 @@ function Message({
   role,
   parts,
   streaming,
-  askHealth,
+  locked,
+  minor,
   pregnant,
   tan,
   limitedFacePigmentation,
@@ -540,13 +605,15 @@ function Message({
   role: string;
   parts: Part[];
   streaming: boolean;
-  askHealth: boolean;
+  locked?: string;
+  minor: boolean;
   pregnant: boolean;
   tan: boolean;
   limitedFacePigmentation: boolean;
   onOpenRoutine: () => void;
   onCartAll: (r: Routine) => void;
 }) {
+  const base = useContext(CardContext);
   if (role === "user") {
     const text = parts.filter((p) => p.type === "text").map((p) => p.text).join("");
     return (
@@ -561,7 +628,7 @@ function Message({
   const isText = (p: Part) => p.type === "text" && !!p.text?.trim();
   const hasText = parts.some(isText);
   const hasNonSunscreen = parts.some((p) => p.type === "tool-recommend_products" && ((p.output as { cards?: { role: string }[] } | undefined)?.cards ?? []).some((x) => x.role !== "sunscreen"));
-  const hasResults = parts.some((p) => p.state === "output-available" && /^tool-(recommend_products|build_routine)$/.test(p.type));
+  const hasResults = parts.some((p) => p.state === "output-available" && /^tool-(recommend_products|build_routine|update_routine|recheck_routine)$/.test(p.type));
   // Treatments lead, supporting basics (cleansers, moisturisers, sunscreen) follow.
   const KIND_ORDER: Record<string, number> = { treatment: 0, deodorant: 1, exfoliator: 2, cleanser: 3, moisturiser: 4, conditioner: 5, sunscreen: 6, supplement: 7 };
   const rank = (p: Part) => (p.type === "tool-recommend_products" ? (KIND_ORDER[(p.output as { kind?: string } | undefined)?.kind ?? ""] ?? 9) : -1);
@@ -570,7 +637,9 @@ function Message({
     (p) => !(streaming && !hasText && p.state === "output-available" && /^tool-(recommend_products|build_routine|update_routine|compare_products)$/.test(p.type))
   );
   return (
+    <CardContext.Provider value={locked ? { ...base, locked } : base}>
     <div className="flex animate-fade-up flex-col gap-3">
+      {locked && hasResults && <p className="rounded-2xl bg-sky px-3 py-2 text-xs leading-relaxed text-navy">{locked}</p>}
       {ordered.map((p, i) => {
         if (isText(p)) return <Bubble key={i}>{p.text}</Bubble>;
         const name = p.type.replace("tool-", "");
@@ -594,7 +663,16 @@ function Message({
         }
         if (name === "compare_products") return <CompareTable key={i} products={(out.products as never[]) ?? []} />;
         if (ROUTINE_TOOLS.includes(p.type) && out.items)
-          return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} onCartAll={onCartAll} />;
+          return <RoutineChatCard key={i} r={out as unknown as Routine} onOpen={onOpenRoutine} onCartAll={onCartAll} locked={locked} />;
+        if (name === "recheck_routine") {
+          const rc = out as unknown as { about: string; flagged: { id: string; name: string; reason: string }[]; keptCount: number; routine: Routine | null };
+          return (
+            <div key={i} className="grid gap-3">
+              <RecheckCard about={rc.about} flagged={rc.flagged ?? []} keptCount={rc.keptCount ?? 0} />
+              {rc.routine?.items?.length ? <RoutineChatCard r={rc.routine} onOpen={onOpenRoutine} onCartAll={onCartAll} locked={locked} title="Your re-checked routine" /> : null}
+            </div>
+          );
+        }
         return null;
       })}
       {tan && hasResults && !streaming && (
@@ -613,9 +691,8 @@ function Message({
         <p className="px-1 text-xs leading-relaxed text-slate">Topical products work best alongside a healthy diet and lifestyle.</p>
       )}
       {pregnant && hasResults && !streaming && <Bubble>{PREGNANCY_LINE}</Bubble>}
-      {askHealth && hasResults && !streaming && (
-        <Bubble>Do you have any allergies, or are you pregnant or nursing? Tell me if you&apos;d like me to account for that in these picks.</Bubble>
-      )}
+      {minor && hasResults && !streaming && <Bubble>{MINOR_LINE}</Bubble>}
     </div>
+    </CardContext.Provider>
   );
 }
