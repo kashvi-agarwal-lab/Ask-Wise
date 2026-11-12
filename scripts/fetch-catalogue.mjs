@@ -164,6 +164,7 @@ async function main() {
 
   const products = [];
   const failures = [];
+  let oldest = Date.now(); // prices are only as fresh as the OLDEST page used (cached pages keep their own date)
   for (const [i, url] of unique.entries()) {
     const slug = url.split("/product/")[1].replace(/[^a-z0-9-]/gi, "_");
     const file = path.join(CACHE, `${slug}.html`);
@@ -172,6 +173,7 @@ async function main() {
       try {
         if (refresh) throw new Error("refresh");
         html = await fs.readFile(file, "utf8");
+        oldest = Math.min(oldest, (await fs.stat(file)).mtimeMs);
       } catch {
         html = await get(url);
         await fs.writeFile(file, html);
@@ -187,7 +189,7 @@ async function main() {
   console.log(`\nExtracted ${products.length} products, ${failures.length} failed`);
   await fs.writeFile(
     OUT,
-    JSON.stringify({ fetchedAt: new Date().toISOString(), products, failures }, null, 2),
+    JSON.stringify({ fetchedAt: new Date(oldest).toISOString(), products, failures }, null, 2),
   );
   console.log(`Saved ${path.relative(ROOT, OUT)}`);
 }

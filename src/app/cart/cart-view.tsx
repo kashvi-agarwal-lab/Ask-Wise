@@ -1,12 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Price from "@/components/price";
 import { useEffect, useMemo, useState } from "react";
 import type { ProductCard, Variant } from "@/lib/engine";
-import { CardContext, VariantPicker } from "../chat/parts";
+import { CardContext, ProductThumb, VariantPicker } from "../chat/parts";
 import { addToCart, clearCart, decodeCart, encodeCart, removeLine, replaceId, setQty, useCart, type CartLine } from "@/lib/cart";
 
 const SHOP_URL = "https://bebodywise.com/";
@@ -84,7 +83,7 @@ export default function CartView() {
       <header className="border-b border-sky-2/60 bg-white/80 backdrop-blur">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 sm:px-6">
         <Link href="/" className="shrink-0 whitespace-nowrap font-serif text-lg text-navy">
-          Bodywise <span className="text-blue">Guide</span>
+          Ask <span className="text-blue">Wise</span>
         </Link>
         <div className="flex gap-2">
           <Link href="/" className="whitespace-nowrap rounded-full border border-navy/20 px-3 py-1.5 text-sm text-navy transition hover:bg-sky">Home</Link>
@@ -117,9 +116,7 @@ export default function CartView() {
               {rows.map(({ line, p }) => (
                 <div key={line.id} className="rounded-3xl bg-white p-3 ring-1 ring-sky-2/70">
                   <div className="flex gap-3">
-                    <div className="relative aspect-[4/3] w-24 shrink-0 overflow-hidden rounded-2xl bg-sky">
-                      <Image src={p.image} alt={p.name} fill sizes="100px" className="object-cover" />
-                    </div>
+                    <ProductThumb c={p} />
                     <div className="min-w-0 flex-1">
                       <p className="font-medium leading-snug text-navy">
                         {p.name}

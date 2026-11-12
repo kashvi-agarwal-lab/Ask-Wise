@@ -54,12 +54,16 @@ function Expand({ title, children }: { title: string; children: React.ReactNode 
 }
 
 // Catalogue photos are 4:3, so a 4:3 frame shows them whole (nothing cropped).
-function Thumb({ c, className = "w-24" }: { c: ProductCard; className?: string }) {
-  const [failed, setFailed] = useState(false);
+// If a photo fails to load (or is missing), the frame keeps its size and shows what the product is.
+export function ProductThumb({ c, className = "w-24" }: { c: Pick<ProductCard, "name" | "image" | "type">; className?: string }) {
+  const [failed, setFailed] = useState(!c.image);
   return (
     <div className={`relative aspect-[4/3] shrink-0 overflow-hidden rounded-2xl bg-sky ${className}`}>
       {failed ? (
-        <span className="absolute inset-0 flex items-center justify-center font-serif text-3xl text-blue/60">{c.name.charAt(0)}</span>
+        <span className="absolute inset-0 flex flex-col items-center justify-center px-1 text-center" role="img" aria-label={`${c.name} (photo unavailable)`}>
+          <span className="font-serif text-2xl leading-none text-blue/70">{c.name.replace(/^be bodywise\s+/i, "").charAt(0)}</span>
+          <span className="mt-1 line-clamp-1 text-[10px] capitalize text-slate">{c.type}</span>
+        </span>
       ) : (
         <Image src={c.image} alt={c.name} fill sizes="120px" className="object-cover" onError={() => setFailed(true)} />
       )}
@@ -190,7 +194,7 @@ export function ProductCardView({
         <span className="mb-1.5 inline-block rounded-full bg-blue px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-white">★ {badge}</span>
       )}
       <div className="flex gap-3">
-        <Thumb c={c} />
+        <ProductThumb c={c} />
         <div className="min-w-0 flex-1 py-0.5">
           <p className="text-[15px] font-medium leading-snug text-navy">
             {c.name}
