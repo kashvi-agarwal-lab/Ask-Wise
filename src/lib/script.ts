@@ -12,6 +12,15 @@ export type Scripted = { id: string; question: string; options: string[]; multiS
 
 /* ---------- Reading what the customer already said ---------- */
 
+/** The customer writes in Hindi or Hinglish (Roman script or Devanagari). */
+export function writesHinglish(text: string): boolean {
+  if (/[\u0900-\u097F]/.test(text)) return true;
+  const words = text.toLowerCase().match(/[a-z]+/g) ?? [];
+  const hits = words.filter((w) => HINDI_WORDS.has(w)).length;
+  return hits >= 2 && hits / Math.max(words.length, 1) >= 0.2;
+}
+const HINDI_WORDS = new Set("hai hain mere meri mera mujhe bahut rahe raha rahi nahi nahin kya aur ho ki ka ke se me mein baal chehre chehra daane khujli jhad gir kaise kyun karu karun bhi thoda zyada wala wali".split(" "));
+
 export function concernKeysFromText(text: string): string[] {
   const t = text.toLowerCase();
   const keys = new Set<string>();
@@ -34,6 +43,20 @@ export function concernKeysFromText(text: string): string[] {
     [/sun ?screen|sun protection|spf/, "sun-protection"],
   ];
   for (const [re, k] of rules) if (re.test(t)) keys.add(k);
+  // Hindi / Hinglish (Roman script) ways of saying the same things
+  const hinglish: [RegExp, string][] = [
+    [/baal\b.{0,25}(jhad|jhar|gir|toot|tut|kam ho)|(jhad|jhar|gir) rahe|hair ?fall ho/, "hair-fall"],
+    [/\b(rusi|roosi|ruusi)\b/, "dandruff"],
+    [/(chehr[ae]|munh|face).{0,20}(daane|dane|muhase|muhanse|pimple)|(daane|dane|muhase|muhanse).{0,20}(chehr[ae]|munh)/, "face-acne"],
+    [/(peeth|kamar|back).{0,20}(daane|dane|muhase|muhanse|pimple)|(daane|dane|muhase|muhanse).{0,20}(peeth|kamar)/, "body-acne"],
+    [/(skin|twacha|tvacha|chamdi).{0,15}(rukhi|rookhi|sukhi|dry)|rukhi (skin|twacha|tvacha)/, "dry-skin"],
+    [/\b(daag|dhabb?e|jhaaiyan|jhaiyan|jhaiyaan)\b/, "pigmentation"],
+    [/\b(bagal|kankh)\b.{0,20}(kal[ae]|kaal[ae]|dark)/, "underarm-darkness"],
+    [/pasin[ae].{0,15}(badbu|smell|bu\b)|\bbadbu\b/, "underarm-odour"],
+    [/baal.{0,15}(rukhe|rookhe|dry|bejaan)/, "dry-hair"],
+  ];
+  for (const [re, k] of hinglish) if (re.test(t)) keys.add(k);
+  if (/\b(daane|dane|muhase|muhanse)\b/.test(t) && !keys.has("face-acne") && !keys.has("body-acne")) keys.add("acne");
   if (/\bacne\b|\bpimples?\b|breakouts?/.test(t) && !keys.has("face-acne") && !keys.has("body-acne")) keys.add("acne"); // acne, area unknown
   return [...keys];
 }
@@ -43,7 +66,9 @@ export function areasFromText(text: string, keys: string[]): string[] {
   const a = new Set<string>();
   if (keys.includes("face-acne") || /\b(face|facial|forehead|cheeks?|chin)\b/.test(t)) a.add("face");
   if (keys.includes("body-acne") || /\b(back|chest|shoulders?|body|legs?|arms?|underarms?|feet|heels?)\b/.test(t)) a.add("body");
-  if (keys.some((k) => ["hair-fall", "dandruff", "frizz-damage", "dry-hair"].includes(k)) || /\b(hair|scalp)\b/.test(t)) a.add("scalp");
+  if (/\b(chehr[ae]|munh)\b/.test(t)) a.add("face");
+  if (/\b(peeth|kamar)\b/.test(t)) a.add("body");
+  if (keys.some((k) => ["hair-fall", "dandruff", "frizz-damage", "dry-hair"].includes(k)) || /\b(hair|scalp|baal|sir|sar)\b/.test(t)) a.add("scalp");
   return [...a];
 }
 
@@ -138,6 +163,8 @@ const informative = (p: Profile) => (p.answered ?? []).filter((id) => ["area", "
 /** Which of the app's questions comes next (null = nothing more to ask, time to recommend). */
 export function nextScripted(profile: Profile, messages: UIMessage[], needsOptions: string[]): Scripted | null {
   const q = nextScriptedRaw(profile, messages, needsOptions);
+  if (q && !(profile.askedIds ?? []).length && writesHinglish(allUserText(messages)))
+    return { ...q, question: `${q.question} (Sawaal simple English mein hain, tap karke jawab de sakte hain. Hindi ya Hinglish mein likhna bhi bilkul theek hai.)` };
   const c = profile.clarify;
   if (q && c && c.id === q.id)
     return {

@@ -15,7 +15,7 @@ import { systemPrompt, type Profile } from "@/lib/prompt";
 import { mentionsPregnancy, allUserText, needsDoctor, recentUserText, dryOrSensitive, safetySignature, sigStricter, describeSig } from "@/lib/safety-text";
 import { isAllowed, strengthOf, exclusionReason, type SafetyCtx } from "@/lib/safety";
 import { flowHint, questionState, applyAnswers, needsOptions, requiredGroups, groupLabel, MAX_QUESTIONS } from "@/lib/flow";
-import { nextScripted, starterMode } from "@/lib/script";
+import { nextScripted, starterMode, writesHinglish } from "@/lib/script";
 import {
   searchProducts,
   fitScore,
@@ -156,6 +156,10 @@ export async function POST(req: Request) {
   if (needsRecheck)
     alerts.push(
       `The customer just told you about ${describeSig(sigNow)} AFTER seeing products. The app has re-checked everything shown so far (recheck_routine): products it flagged are no longer suggested, and the earlier cards are marked as replaced. In 2 or 3 sentences, say you've re-checked their picks with this in mind, name what was flagged in plain words (the app shows the list and reasons), and do not recommend any flagged product again. Then follow the other safety alerts.`
+    );
+  if (writesHinglish(allUserText(messages)))
+    alerts.push(
+      "The customer is writing in Hindi or Hinglish. Reply in simple, friendly Hinglish (Roman script), with the same meaning and safety rules. Keep product names exactly as the tools give them. If you are unsure what they meant, ask kindly in Hinglish."
     );
   const finalAlerts = alerts.join("\n");
 
