@@ -202,7 +202,7 @@ export async function POST(req: Request) {
     // The small free model sometimes searches and then just chats instead of showing products.
     // Once it has searched, it must finish with a real answer tool (ask / recommend / routine / compare).
     prepareStep: ({ steps, stepNumber }) => {
-      if (referral || offTopic) return { toolChoice: "none" as const }; // hard gate: no tools, so no product cards and no Buy links
+      if (referral || offTopic) return { toolChoice: "none" as const, activeTools: [] as never }; // hard gate: no tools offered at all, so no product cards and no Buy links
       if (needsRecheck && stepNumber === 0)
         return { toolChoice: { type: "tool" as const, toolName: "recheck_routine" as const }, activeTools: ["recheck_routine"] as never };
       const rechecked = steps.some((st) => st.toolCalls.some((c) => c.toolName === "recheck_routine"));
@@ -211,7 +211,7 @@ export async function POST(req: Request) {
         const q = stepNumber === 0 || (rechecked && stepNumber === 1) ? pending() : null;
         return q?.id === "allergen"
           ? { toolChoice: { type: "tool" as const, toolName: "ask_scripted" as const }, activeTools: ["ask_scripted"] as never }
-          : { toolChoice: "none" as const };
+          : { toolChoice: "none" as const, activeTools: [] as never };
       }
       // Until we know "individual picks or a routine", the AI may not show products yet: it must ask.
       const next = questionState(messages).asked < MAX_QUESTIONS ? pending() : null;
