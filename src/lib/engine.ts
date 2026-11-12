@@ -71,6 +71,7 @@ export function card(p: Product) {
     tagline: p.tagline ?? null,
     concerns: p.concerns.filter((c) => c.strength === "primary").map((c) => c.label),
     concernKeys: p.concerns.map((c) => c.key),
+    primaryKeys: p.concerns.filter((c) => c.strength === "primary").map((c) => c.key), // what the official page says it's MADE for
     actives: displayIngredients(p),
     role: roleOf(p),
     variants: variantsOf(p),

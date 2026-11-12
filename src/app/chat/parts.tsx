@@ -175,7 +175,12 @@ export function ProductCardView({
         ? "You mentioned an allergy: check the full ingredient list on the pack, and ask a doctor if you're unsure. Don't test a product you may be allergic to."
         : "Patch-test on a small area for 24 hours before regular use.",
   ];
-  const matched = (c.concernKeys ?? []).filter((k) => profileConcerns.includes(k)).map((k) => CONCERN_LABELS[k] ?? k);
+  // "Made for" only when the official page lists the concern as a main purpose; a secondary tag is
+  // shown as supportive care, so a broad tag never reads as a promise.
+  const primary = new Set(c.primaryKeys ?? []);
+  const mine = (c.concernKeys ?? []).filter((k) => profileConcerns.includes(k));
+  const matched = mine.filter((k) => primary.has(k)).map((k) => CONCERN_LABELS[k] ?? k);
+  const supportive = c.primaryKeys ? mine.filter((k) => !primary.has(k)).map((k) => CONCERN_LABELS[k] ?? k) : [];
   const inRoutine = routineIds.has(c.id);
   const sizeText = c.size ? ` · ${c.size}` : "";
 
@@ -199,10 +204,13 @@ export function ProductCardView({
         </div>
       </div>
 
-      {(matched.length > 0 || c.actives.length > 0) && (
+      {(matched.length > 0 || supportive.length > 0 || c.actives.length > 0) && (
         <div className="mt-2 flex flex-wrap gap-1">
           {matched.map((m) => (
-            <span key={m} className="rounded-full bg-sky px-2 py-0.5 text-[11px] text-navy">✓ Matches: {m}</span>
+            <span key={m} className="rounded-full bg-sky px-2 py-0.5 text-[11px] text-navy">✓ Made for: {m}</span>
+          ))}
+          {supportive.map((m) => (
+            <span key={m} className="rounded-full border border-sky-2 px-2 py-0.5 text-[11px] text-slate">Supportive for: {m}</span>
           ))}
           {c.actives.slice(0, 2).map((a) => (
             <span key={a} className="rounded-full border border-sky-2 px-2 py-0.5 text-[11px] text-slate">{a}</span>

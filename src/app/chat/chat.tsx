@@ -627,7 +627,14 @@ function Message({
   // tool call, so we reorder here.) Cards wait for the text while it is still streaming.
   const isText = (p: Part) => p.type === "text" && !!p.text?.trim();
   const hasText = parts.some(isText);
-  const hasNonSunscreen = parts.some((p) => p.type === "tool-recommend_products" && ((p.output as { cards?: { role: string }[] } | undefined)?.cards ?? []).some((x) => x.role !== "sunscreen"));
+  // Every product shown in this message (picks and routine), for evidence-based notes below.
+  type Shown = { name: string; category?: string; concernKeys?: string[]; primaryKeys?: string[] };
+  const shown: Shown[] = parts.flatMap((p) => {
+    const o = p.output as { cards?: Shown[]; items?: Shown[]; routine?: { items?: Shown[] } } | undefined;
+    return p.state === "output-available" ? [...(o?.cards ?? []), ...(o?.items ?? []), ...(o?.routine?.items ?? [])] : [];
+  });
+  const tanListed = [...new Set(shown.filter((x) => x.concernKeys?.includes("tan")).map((x) => x.name))];
+  const facePigPrimary = shown.some((x) => x.category === "face" && x.primaryKeys?.includes("pigmentation"));
   const hasResults = parts.some((p) => p.state === "output-available" && /^tool-(recommend_products|build_routine|update_routine|recheck_routine)$/.test(p.type));
   // Treatments lead, supporting basics (cleansers, moisturisers, sunscreen) follow.
   const KIND_ORDER: Record<string, number> = { treatment: 0, deodorant: 1, exfoliator: 2, cleanser: 3, moisturiser: 4, conditioner: 5, sunscreen: 6, supplement: 7 };
@@ -683,14 +690,16 @@ function Message({
       })}
       {tan && hasResults && !streaming && (
         <Bubble>
-          {hasNonSunscreen
-            ? "Sunscreen helps prevent more tan, but it doesn't fade tan you already have. The exfoliating picks above are the ones in the range that help lighten it over time."
-            : "I couldn't find a Bodywise product that removes tan. Sunscreen only helps prevent more tan: it doesn't fade tan you already have."}
+          {tanListed.length
+            ? `${tanListed.join(", ")} list${tanListed.length === 1 ? "s" : ""} tan among ${tanListed.length === 1 ? "its" : "their"} concerns on the official Be Bodywise page. How much any product helps varies from person to person. Sunscreen helps prevent new tan; it doesn't fade tan you already have.`
+            : "None of the products shown here lists tan as a concern on its official page, so I can't say they'll fade it. Sunscreen helps prevent new tan; it doesn't fade tan you already have."}
         </Bubble>
       )}
       {limitedFacePigmentation && hasResults && !streaming && (
         <Bubble>
-          The Bodywise range has limited options for dark patches on the face, so the picks above are what exists. For stubborn patches, a dermatologist can help.
+          {facePigPrimary
+            ? "The Bodywise range has few products for dark patches on the face. Results vary, and a dermatologist can help with stubborn patches."
+            : "No face product in the Bodywise range is made mainly for dark patches, so anything above is supportive care at most, not a treatment for them. A dermatologist can help with stubborn patches."}
         </Bubble>
       )}
       {hasResults && !streaming && (

@@ -2,10 +2,13 @@
 // AI model skips rules in long prompts. This text is added to the AI's instructions.
 import type { UIMessage } from "ai";
 import type { Profile } from "./prompt";
-import type { Role } from "./catalogue";
+import { visibleProducts, type Role } from "./catalogue";
 import { applyScriptedAnswer, areasFromText, concernKeysFromText, deniesDandruff, modeFromText, scalpItchFromText, skinTypeFromText, starterMode } from "./script";
 import { allUserText, ageBandFromText, mentionsAllergy, mentionsPregnancy, needsDoctor } from "./safety-text";
 import { allergensFromText } from "./safety";
+
+/** Whether any face product lists pigmentation as a main purpose (checked against the catalogue, not assumed). */
+const FACE_PIGMENTATION_PRIMARY = visibleProducts.some((p) => p.category === "face" && p.concerns.some((c) => c.key === "pigmentation" && c.strength === "primary"));
 
 export const MAX_QUESTIONS = 9; // a ceiling (includes the safety check-in); the usual depth is 3 to 4 questions
 
@@ -201,9 +204,15 @@ export function flowHint(profile: Profile, asked: number, messages: UIMessage[] 
   if (/strong actives/i.test(profile.history ?? ""))
     notes.push("They have already used strong actives: do not stack more strong actives on top, and advise starting slowly.");
   if ((profile.concerns ?? []).includes("tan"))
-    notes.push("The customer wants tan removed. Sunscreen only PREVENTS more tan, it does not fade tan they already have: say that honestly. Lead with the exfoliating products that list tan as a concern, and add sunscreen for prevention.");
+    notes.push("The customer wants tan removed. Sunscreen only PREVENTS new tan; it does not fade existing tan: say that honestly. Lead with products whose catalogue concerns include tan, and describe them only as 'listed for tan on the official page'. Never say a product fades, removes or lightens tan, and never promise results. If no product returned lists tan, say there is no strong match in the range. The app adds a note with the same facts.");
   if ((profile.concerns ?? []).includes("pigmentation") && (profile.bodyAreas ?? []).includes("face"))
-    notes.push("The customer wants help with dark patches or pigmentation on the FACE. The Bodywise range has limited options for face pigmentation: say that plainly, recommend only what the tools return, and suggest a dermatologist for stubborn patches.");
+    notes.push(
+      FACE_PIGMENTATION_PRIMARY
+        ? "The customer wants help with dark patches on the FACE. The range has few options: recommend only what the tools return, and suggest a dermatologist for stubborn patches."
+        : "The customer wants help with dark patches or pigmentation on the FACE. No face product in the catalogue lists pigmentation as its main purpose, so say plainly there is no strong match; anything you show is supportive care, not a treatment. Suggest a dermatologist for stubborn patches."
+    );
+  if ((profile.concerns ?? []).includes("pigmentation"))
+    notes.push("Pigmentation: only call a product a treatment for dark patches if the tools show pigmentation as its PRIMARY concern ('Made for'). A product that lists it only as a secondary concern is supportive care: say so. Never imply results from a concern tag alone.");
   if (starterMode(profile, messages))
     notes.push("The customer was unsure about most questions: give a gentle, low-risk STARTER set (mild cleanser, moisturiser, and sunscreen where relevant, nothing strong) and say honestly that this is 'a good place to start', not a full plan.");
   const extra = notes.length ? `\n${notes.join("\n")}` : "";
